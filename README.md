@@ -1,67 +1,144 @@
-# Sqlserver — Tabularis Plugin
+# tabularis-sqlserver-plugin
 
-Driver plugin for [Tabularis](https://github.com/TabularisDB/tabularis).
-Generated with `@tabularis/create-plugin`.
+A [Tabularis](https://github.com/TabularisDB/tabularis) driver plugin for **Microsoft SQL Server**, written in Rust on top of [`tiberius`](https://crates.io/crates/tiberius) with [`deadpool`](https://crates.io/crates/deadpool) connection pooling.
 
-## Getting started
+Tabularis launches the compiled binary as a subprocess and talks to it over stdio using JSON-RPC (one JSON object per line in, one JSON object per line out).
+
+## Table of Contents
+
+- [Features](#features)
+- [Connection Configuration](#connection-configuration)
+- [Supported Data Types](#supported-data-types)
+- [Installation](#installation)
+- [Known Limitations](#known-limitations)
+- [Building from Source](#building-from-source)
+- [Development](#development)
+- [Credits](#credits)
+- [License](#license)
+
+## Features
+
+- Stable `tiberius` + `deadpool` connection pooling with session reset (`sp_reset_connection`), startup scripts, and pool lifecycle handling
+- Schema, table, column, PK/FK, index, view, routine, and trigger introspection
+- Query execution with pagination, CTE/DML classification, multiple result sets, and session-preserving batches
+- Accurate affected rows, including multi-statement DML and DML `OUTPUT`
+- INSERT/UPDATE/DELETE with composite primary keys and safe `IDENTITY_INSERT` recovery
+- Table/view/index/foreign-key DDL and safe `ALTER COLUMN` generation
+- Trigger creation, editing, and removal
+- Procedure/function management, typed `OUT`/`INOUT` variables, and table-valued functions
+- Static and runtime execution plans through `SHOWPLAN_XML` / `STATISTICS XML`, rendered in Tabularis's Visual EXPLAIN
+- JavaScript-safe `BIGINT` extraction and broad SQL Server type handling
+
+## Connection Configuration
+
+| Parameter | Default | Notes |
+|-----------|---------|-------|
+| Host | `localhost` | |
+| Port | `1433` | |
+| Username | `sa` | SQL authentication only |
+| Password | — | |
+| Database | — | The database the pool connects to |
+| Startup script | — | SQL run on every new pooled connection (e.g. `SET` options) |
+
+### TLS modes
+
+The standard Tabularis `ssl_mode` values map onto the TDS encryption policy:
+
+| Mode | Behaviour |
+|------|-----------|
+| `disable` | Encryption off |
+| `prefer` (default) | Encrypted, server certificate accepted |
+| `require` | Encryption required, server certificate accepted |
+| `verify-full` | Encryption required, certificate and hostname verified against the **system trust store** |
+| `verify-ca` | Rejected — use `verify-full` |
+
+Custom CA files and client certificates are rejected explicitly; strict verification uses the system trust store.
+
+## Supported Data Types
+
+All common SQL Server types are supported for column creation and value extraction, including exact/approximate numerics (`TINYINT` … `BIGINT`, `DECIMAL`, `MONEY`, `FLOAT`), strings (`CHAR`/`VARCHAR`/`NVARCHAR` incl. `MAX`, `TEXT`/`NTEXT`), binary (`BINARY`/`VARBINARY`/`IMAGE`), date/time (`DATE`, `TIME`, `DATETIME`, `DATETIME2`, `SMALLDATETIME`, `DATETIMEOFFSET`), `BIT`, `UNIQUEIDENTIFIER`, `XML`, `SQL_VARIANT`, `ROWVERSION`, `HIERARCHYID`, and spatial (`GEOGRAPHY`, `GEOMETRY`).
+
+`BIGINT` values outside JavaScript's safe integer range are delivered as strings so they round-trip without precision loss.
+
+## Installation
+
+### Automatic (via Tabularis)
+
+Open **Settings → Plugins** in Tabularis and install *SQL Server* from the plugin registry.
+
+### Manual Installation
+
+1. Download the ZIP for your platform from the [releases page](https://github.com/TabularisDB/tabularis-sqlserver-plugin/releases).
+2. Extract it into the Tabularis plugins directory:
+   - **Linux:** `~/.local/share/tabularis/plugins/sqlserver/`
+   - **macOS:** `~/Library/Application Support/com.debba.tabularis/plugins/sqlserver/`
+   - **Windows:** `%APPDATA%\debba\tabularis\data\plugins\sqlserver\`
+3. On Linux/macOS, make the binary executable: `chmod +x sqlserver-plugin`
+4. Restart Tabularis — *SQL Server* appears in the connection picker.
+
+## Known Limitations
+
+- SQL authentication only; Azure AD and Windows Integrated Authentication are follow-up work.
+- Primary-key membership changes are disabled: the single-column alteration API cannot safely preserve composite PKs and referencing foreign keys.
+- Custom CA files are rejected explicitly; strict verification uses the system trust store.
+
+## Building from Source
+
+### Prerequisites
+
+- Rust (stable, see `rust-toolchain.toml`)
+- [`just`](https://github.com/casey/just) (optional, wraps the common cargo invocations)
+
+### Build
 
 ```bash
-just dev-install       # build + install into ~/.local/share/tabularis/plugins/sqlserver
+just build      # debug build
+just release    # release build (what the GitHub Actions workflow ships)
 ```
 
-Then open Tabularis — your driver appears in the connection picker. `test_connection` is stubbed to return success so you can immediately see the plugin wired up.
+### Install Locally
 
-## What's implemented
-
-| Method | Status | Notes |
-|--------|--------|-------|
-| `test_connection` | placeholder | returns `{success: true}` unconditionally — replace with a real check before shipping |
-| `ping` | minimal | returns `null`; falls back to `test_connection` if missing |
-| `get_databases`, `get_schemas`, `get_tables`, `get_columns`, `get_indexes`, `get_foreign_keys` | stubs | return `[]` — fill these in to populate the sidebar |
-| `get_views*`, `get_routines*`, `create_view`, `alter_view`, `drop_view` | `-32601` | not implemented — flip `capabilities.views` / `capabilities.routines` once you wire these |
-| `execute_query`, `explain_query` | `-32601` | implement first if you want query execution in the UI |
-| `insert_record`, `update_record`, `delete_record` | `-32601` | implement for row editing support |
-| DDL generators, batch methods | `-32601` | implement as you light up the matching UI features |
-
-## Layout
-
-```
-src/
-├── main.rs            thin stdio loop
-├── rpc.rs             method dispatch + response helpers
-├── error.rs           plugin error type
-├── models.rs          ConnectionParams + common shapes
-├── client.rs          connection config (stub — implement your driver here)
-├── handlers/
-│   ├── metadata.rs    databases, schemas, tables, columns, indexes, FKs, views, routines
-│   ├── query.rs       test_connection, ping, execute_query, explain_query
-│   ├── crud.rs        insert_record, update_record, delete_record
-│   └── ddl.rs         CREATE/ALTER/DROP generators
-├── utils/
-│   ├── identifiers.rs quote_identifier(name) + tests
-│   └── pagination.rs  paginate(query, page, size) + tests
-└── bin/
-    └── test_plugin.rs local REPL for simulating Tabularis calls
+```bash
+just dev-install   # build + copy binary and manifest into the Tabularis plugins dir
+just uninstall     # remove the installed plugin
 ```
 
-## Testing without Tabularis
+## Development
+
+### Testing the Plugin
+
+Unit tests need no database:
+
+```bash
+just test
+just lint
+just fmt
+```
+
+You can drive the plugin directly over stdio:
+
+```bash
+echo '{"jsonrpc":"2.0","method":"get_create_table_sql","params":{"table_name":"users","schema":"dbo","columns":[{"name":"id","data_type":"INT","is_nullable":false,"is_pk":true,"is_auto_increment":true,"default_value":null}]},"id":1}' \
+  | ./target/debug/sqlserver-plugin
+```
+
+or use the interactive REPL:
 
 ```bash
 just repl
-# > get_tables
-# { "tables": [] }
 ```
 
-## Publishing
+### Setting Up a Local SQL Server
 
-Tag a commit `v0.1.0` and push — the included GitHub Actions workflow builds for Linux (x64/arm64), macOS (x64/arm64), and Windows (x64), then attaches the zipped plugin bundles to the release. Submit a PR to `plugins/registry.json` in the Tabularis repo to publish to the in-app registry.
+```bash
+just run-sqlserver    # SQL Server 2022 in Docker (sa / Str0ng!Passw0rd)
+just seed-sqlserver   # create and seed the tabularis_test database
+```
 
-## References
+## Credits
 
-- [Plugin guide](https://github.com/TabularisDB/tabularis/blob/main/plugins/PLUGIN_GUIDE.md)
-- [Manifest schema](https://github.com/TabularisDB/tabularis/blob/main/plugins/manifest.schema.json)
-- [Tabularis repo](https://github.com/TabularisDB/tabularis)
+The SQL Server driver implementation was contributed by [Fabio Malpezzi](https://github.com/FabioMalpezzi), originally developed as a built-in Tabularis driver and adapted here to the plugin architecture.
 
 ## License
 
-Apache-2.0
+Apache-2.0 — see [LICENSE](./LICENSE).

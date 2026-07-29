@@ -1,6 +1,23 @@
 set shell := ["bash", "-cu"]
 set windows-shell := ["powershell.exe", "-NoLogo", "-NoProfile", "-Command"]
 
+# Run SQL Server 2022 via Docker (accept the EULA, set a strong SA password)
+run-sqlserver:
+	docker run -d --name sqlserver-dev -p 1433:1433 \
+		-e "ACCEPT_EULA=Y" -e "MSSQL_SA_PASSWORD=Str0ng!Passw0rd" \
+		mcr.microsoft.com/mssql/server:2022-latest
+
+# Seed a test database into the local SQL Server container
+seed-sqlserver:
+	docker exec sqlserver-dev /opt/mssql-tools18/bin/sqlcmd \
+		-S localhost -U sa -P "Str0ng!Passw0rd" -C -Q \
+		"IF DB_ID('tabularis_test') IS NULL CREATE DATABASE tabularis_test; \
+		 USE tabularis_test; \
+		 IF OBJECT_ID('dbo.users') IS NULL BEGIN \
+		   CREATE TABLE dbo.users (id INT IDENTITY(1,1) PRIMARY KEY, name NVARCHAR(100) NOT NULL, email NVARCHAR(255) NOT NULL); \
+		   INSERT INTO dbo.users (name, email) VALUES (N'Alice', N'alice@example.com'), (N'Bob', N'bob@example.com'); \
+		 END"
+
 # ---------------------------------------------------------------------------
 # Cross-platform recipes (only shell-agnostic tooling — cargo, npm).
 # ---------------------------------------------------------------------------
@@ -71,19 +88,19 @@ dev-install: build
 
 [macos]
 dev-install: build
-    mkdir -p "$HOME/Library/Application Support/tabularis/plugins/sqlserver"
+    mkdir -p "$HOME/Library/Application Support/com.debba.tabularis/plugins/sqlserver"
     cp target/debug/sqlserver-plugin "$HOME/Library/Application Support/tabularis/plugins/sqlserver/"
     cp .tabularium "$HOME/Library/Application Support/tabularis/plugins/sqlserver/"
     @if [ -f ui/dist/index.js ]; then \
         mkdir -p "$HOME/Library/Application Support/tabularis/plugins/sqlserver/ui/dist"; \
         cp ui/dist/index.js "$HOME/Library/Application Support/tabularis/plugins/sqlserver/ui/dist/"; \
     fi
-    @echo "Installed to ~/Library/Application Support/tabularis/plugins/sqlserver"
+    @echo "Installed to ~/Library/Application Support/com.debba.tabularis/plugins/sqlserver"
     @echo "Restart Tabularis (or toggle the plugin in Settings) to pick up changes."
 
 [windows]
 dev-install: build
-    $dest = Join-Path $env:APPDATA "tabularis\plugins\sqlserver"
+    $dest = Join-Path $env:APPDATA "debba\tabularis\data\plugins\sqlserver"
     New-Item -ItemType Directory -Force -Path $dest | Out-Null
     Copy-Item "target\debug\sqlserver-plugin.exe" $dest
     Copy-Item ".tabularium" $dest
@@ -101,9 +118,9 @@ uninstall:
 
 [macos]
 uninstall:
-    rm -rf "$HOME/Library/Application Support/tabularis/plugins/sqlserver"
+    rm -rf "$HOME/Library/Application Support/com.debba.tabularis/plugins/sqlserver"
 
 [windows]
 uninstall:
-    $dest = Join-Path $env:APPDATA "tabularis\plugins\sqlserver"
+    $dest = Join-Path $env:APPDATA "debba\tabularis\data\plugins\sqlserver"
     if (Test-Path $dest) { Remove-Item -Recurse -Force $dest }
