@@ -1,8 +1,23 @@
+<div align="center">
+  <img src="https://raw.githubusercontent.com/debba/tabularis/main/public/logo-sm.png" width="120" height="120" />
+</div>
+
 # tabularis-sqlserver-plugin
 
-A [Tabularis](https://github.com/TabularisDB/tabularis) driver plugin for **Microsoft SQL Server**, written in Rust on top of [`tiberius`](https://crates.io/crates/tiberius) with [`deadpool`](https://crates.io/crates/deadpool) connection pooling.
+<p align="center">
 
-Tabularis launches the compiled binary as a subprocess and talks to it over stdio using JSON-RPC (one JSON object per line in, one JSON object per line out).
+![](https://img.shields.io/github/release/tabularisDB/tabularis-sqlserver-plugin.svg?style=flat)
+![](https://img.shields.io/github/downloads/tabularisDB/tabularis-sqlserver-plugin/total.svg?style=flat)
+![Build & Release](https://github.com/tabularisDB/tabularis-sqlserver-plugin/workflows/Release/badge.svg)
+[![Discord](https://img.shields.io/discord/1502944695808950282?color=5865F2&logo=discord&logoColor=white)](https://discord.com/invite/K2hmhfHRSt)
+
+</p>
+
+A [Microsoft SQL Server](https://www.microsoft.com/sql-server) plugin for [Tabularis](https://github.com/TabularisDB/tabularis), the lightweight database management tool.
+
+This plugin enables Tabularis to connect to SQL Server instances, providing schema introspection, query execution, full CRUD, DDL, trigger and stored-routine management, and visual execution plans through a JSON-RPC 2.0 over stdio interface. It is written in Rust on top of [`tiberius`](https://crates.io/crates/tiberius) with [`deadpool`](https://crates.io/crates/deadpool) connection pooling.
+
+**Discord** - [Join our discord server](https://discord.com/invite/K2hmhfHRSt) and chat with the maintainers.
 
 ## Table of Contents
 
