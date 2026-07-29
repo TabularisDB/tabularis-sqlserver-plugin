@@ -1,13 +1,15 @@
 //! JSON-RPC dispatch and response helpers.
 
+use serde::Serialize;
 use serde_json::{json, Value};
 
-use crate::handlers;
+use crate::handlers::{crud, ddl, metadata, query, routines, triggers, views};
+use crate::models::ConnectionParams;
 
 /// Parse one JSON-RPC line and return the response value (serialised
 /// downstream by `main.rs`). Never panics — parse errors and method
 /// failures are surfaced as JSON-RPC error responses.
-pub fn handle_line(line: &str) -> Value {
+pub async fn handle_line(line: &str) -> Value {
     let request: Value = match serde_json::from_str(line) {
         Ok(v) => v,
         Err(err) => return error_response(Value::Null, -32700, &format!("parse error: {err}")),
@@ -23,46 +25,62 @@ pub fn handle_line(line: &str) -> Value {
 
     match method.as_str() {
         "initialize" => ok_response(id, Value::Null),
-        "ping" => ok_response(id, Value::Null),
-        "test_connection" => handlers::query::test_connection(id, &params),
+        "ping" => query::ping(id, &params).await,
+        "test_connection" => query::test_connection(id, &params).await,
 
-        // Metadata — return empty arrays so the driver loads cleanly.
-        "get_databases" => handlers::metadata::get_databases(id, &params),
-        "get_schemas" => handlers::metadata::get_schemas(id, &params),
-        "get_tables" => handlers::metadata::get_tables(id, &params),
-        "get_columns" => handlers::metadata::get_columns(id, &params),
-        "get_foreign_keys" => handlers::metadata::get_foreign_keys(id, &params),
-        "get_indexes" => handlers::metadata::get_indexes(id, &params),
-        "get_views" => handlers::metadata::get_views(id, &params),
-        "get_view_definition" => handlers::metadata::get_view_definition(id, &params),
-        "get_view_columns" => handlers::metadata::get_view_columns(id, &params),
-        "get_routines" => handlers::metadata::get_routines(id, &params),
-        "get_routine_parameters" => handlers::metadata::get_routine_parameters(id, &params),
-        "get_routine_definition" => handlers::metadata::get_routine_definition(id, &params),
-        "get_schema_snapshot" => handlers::metadata::get_schema_snapshot(id, &params),
-        "get_all_columns_batch" => handlers::metadata::get_all_columns_batch(id, &params),
-        "get_all_foreign_keys_batch" => handlers::metadata::get_all_foreign_keys_batch(id, &params),
+        // Metadata.
+        "get_databases" => metadata::get_databases(id, &params).await,
+        "get_schemas" => metadata::get_schemas(id, &params).await,
+        "get_tables" => metadata::get_tables(id, &params).await,
+        "get_columns" => metadata::get_columns(id, &params).await,
+        "get_foreign_keys" => metadata::get_foreign_keys(id, &params).await,
+        "get_indexes" => metadata::get_indexes(id, &params).await,
+        "get_schema_snapshot" => metadata::get_schema_snapshot(id, &params).await,
+        "get_all_columns_batch" => metadata::get_all_columns_batch(id, &params).await,
+        "get_all_foreign_keys_batch" => metadata::get_all_foreign_keys_batch(id, &params).await,
+        "get_ai_schema_context" => metadata::get_ai_schema_context(id, &params).await,
 
-        // View mutation — not implemented by default.
-        "create_view" | "alter_view" | "drop_view" => not_implemented(id, &method),
+        // Views.
+        "get_views" => views::get_views(id, &params).await,
+        "get_view_definition" => views::get_view_definition(id, &params).await,
+        "get_view_columns" => views::get_view_columns(id, &params).await,
+        "create_view" => views::create_view(id, &params).await,
+        "alter_view" => views::alter_view(id, &params).await,
+        "drop_view" => views::drop_view(id, &params).await,
 
-        // Query execution — critical but needs a real driver.
-        "execute_query" => handlers::query::execute_query(id, &params),
-        "explain_query" => handlers::query::explain_query(id, &params),
+        // Routines.
+        "get_routines" => routines::get_routines(id, &params).await,
+        "get_routine_parameters" => routines::get_routine_parameters(id, &params).await,
+        "get_routine_definition" => routines::get_routine_definition(id, &params).await,
+        "build_routine_call_sql" => routines::build_routine_call_sql(id, &params).await,
+        "routine_create_template" => routines::routine_create_template(id, &params).await,
+        "get_routine_edit_script" => routines::get_routine_edit_script(id, &params).await,
+        "drop_routine" => routines::drop_routine(id, &params).await,
+
+        // Triggers.
+        "get_triggers" => triggers::get_triggers(id, &params).await,
+        "get_trigger_definition" => triggers::get_trigger_definition(id, &params).await,
+        "create_trigger" => triggers::create_trigger(id, &params).await,
+        "drop_trigger" => triggers::drop_trigger(id, &params).await,
+
+        // Query execution.
+        "execute_query" => query::execute_query(id, &params).await,
+        "execute_query_batch" => query::execute_query_batch(id, &params).await,
+        "explain_query" => query::explain_query(id, &params).await,
 
         // CRUD.
-        "insert_record" => handlers::crud::insert_record(id, &params),
-        "update_record" => handlers::crud::update_record(id, &params),
-        "delete_record" => handlers::crud::delete_record(id, &params),
+        "insert_record" => crud::insert_record(id, &params).await,
+        "update_record" => crud::update_record(id, &params).await,
+        "delete_record" => crud::delete_record(id, &params).await,
 
         // DDL.
-        "get_create_table_sql" => handlers::ddl::get_create_table_sql(id, &params),
-        "get_add_column_sql" => handlers::ddl::get_add_column_sql(id, &params),
-        "get_alter_column_sql" => handlers::ddl::get_alter_column_sql(id, &params),
-        "get_create_index_sql" => handlers::ddl::get_create_index_sql(id, &params),
-        "get_create_foreign_key_sql" => handlers::ddl::get_create_foreign_key_sql(id, &params),
-        "drop_index" => handlers::ddl::drop_index(id, &params),
-        "drop_foreign_key" => handlers::ddl::drop_foreign_key(id, &params),
+        "get_create_table_sql" => ddl::get_create_table_sql(id, &params).await,
+        "get_add_column_sql" => ddl::get_add_column_sql(id, &params).await,
+        "get_alter_column_sql" => ddl::get_alter_column_sql(id, &params).await,
+        "get_create_index_sql" => ddl::get_create_index_sql(id, &params).await,
+        "get_create_foreign_key_sql" => ddl::get_create_foreign_key_sql(id, &params).await,
+        "drop_index" => ddl::drop_index(id, &params).await,
+        "drop_foreign_key" => ddl::drop_foreign_key(id, &params).await,
 
         other => not_implemented(id, other),
     }
@@ -88,6 +106,38 @@ pub fn not_implemented(id: Value, method: &str) -> Value {
     error_response(
         id,
         -32601,
-        &format!("method '{method}' is not implemented by this plugin yet"),
+        &format!("method '{method}' is not implemented by this plugin"),
     )
+}
+
+/// Turn a driver outcome into a JSON-RPC response.
+pub fn respond<T: Serialize>(id: Value, outcome: Result<T, String>) -> Value {
+    match outcome {
+        Ok(result) => match serde_json::to_value(result) {
+            Ok(value) => ok_response(id, value),
+            Err(err) => error_response(id, -32603, &format!("serialization failed: {err}")),
+        },
+        Err(message) => error_response(id, -32000, &message),
+    }
+}
+
+/// Deserialize the nested `params.params` connection object every RPC method
+/// receives.
+pub fn conn_params(params: &Value) -> Result<ConnectionParams, String> {
+    serde_json::from_value(params.get("params").cloned().unwrap_or(Value::Null))
+        .map_err(|err| format!("invalid connection params: {err}"))
+}
+
+pub fn opt_str<'a>(params: &'a Value, key: &str) -> Option<&'a str> {
+    params.get(key).and_then(Value::as_str)
+}
+
+pub fn req_str<'a>(params: &'a Value, key: &str) -> Result<&'a str, String> {
+    opt_str(params, key).ok_or_else(|| format!("missing required string parameter '{key}'"))
+}
+
+/// Deserialize a required parameter into a concrete type.
+pub fn req_field<T: serde::de::DeserializeOwned>(params: &Value, key: &str) -> Result<T, String> {
+    serde_json::from_value(params.get(key).cloned().unwrap_or(Value::Null))
+        .map_err(|err| format!("invalid parameter '{key}': {err}"))
 }

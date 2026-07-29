@@ -2,12 +2,25 @@
 name = "sqlserver-plugin"
 version = "0.1.0"
 edition = "2021"
-description = "Tabularis driver plugin for Sqlserver"
+description = "Tabularis driver plugin for Microsoft SQL Server"
 license = "Apache-2.0"
 publish = false
 
 [dependencies]
+base64 = "0.22"
+chrono = "0.4"
+deadpool = "0.12"
+futures = "0.3.31"
+once_cell = "1"
+roxmltree = "0.20"
+rust_decimal = "1"
+serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# SQL Server driver — stable Tiberius client pooled with deadpool.
+tiberius = { version = "0.12", default-features = false, features = ["rustls", "tds73", "chrono", "rust_decimal", "sql-browser-tokio"] }
+tokio = { version = "1", features = ["full"] }
+tokio-util = { version = "0.7", features = ["compat"] }
+uuid = "1"
 
 [profile.release]
 lto = true

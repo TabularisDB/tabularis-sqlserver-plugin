@@ -1,76 +1,112 @@
-//! Schema metadata: databases, schemas, tables, columns, indexes, FKs,
-//! views, routines. Each handler below returns a valid-but-empty response
-//! so the plugin loads without errors. Replace the bodies one by one.
-//!
-//! Full reference: https://github.com/TabularisDB/tabularis/blob/main/plugins/PLUGIN_GUIDE.md#5-required-methods
+//! Schema metadata: databases, schemas, tables, columns, indexes, FKs, and
+//! the ER-diagram / AI batch variants.
 
-use serde_json::{json, Value};
+use serde_json::Value;
 
-use crate::rpc::ok_response;
+use crate::driver::ops;
+use crate::rpc::{conn_params, opt_str, req_str, respond};
 
-pub fn get_databases(id: Value, _params: &Value) -> Value {
-    // TODO: return your real database list.
-    ok_response(id, json!([]))
+pub async fn get_databases(id: Value, params: &Value) -> Value {
+    let conn = match conn_params(params) {
+        Ok(c) => c,
+        Err(e) => return respond::<()>(id, Err(e)),
+    };
+    respond(id, ops::get_databases(&conn).await)
 }
 
-pub fn get_schemas(id: Value, _params: &Value) -> Value {
-    // Only meaningful if `capabilities.schemas` is true in the `.tabularium` manifest.
-    ok_response(id, json!([]))
+pub async fn get_schemas(id: Value, params: &Value) -> Value {
+    let conn = match conn_params(params) {
+        Ok(c) => c,
+        Err(e) => return respond::<()>(id, Err(e)),
+    };
+    respond(id, ops::get_schemas(&conn).await)
 }
 
-pub fn get_tables(id: Value, _params: &Value) -> Value {
-    // TODO: return [{ name, schema, comment }].
-    ok_response(id, json!([]))
+pub async fn get_tables(id: Value, params: &Value) -> Value {
+    let conn = match conn_params(params) {
+        Ok(c) => c,
+        Err(e) => return respond::<()>(id, Err(e)),
+    };
+    respond(id, ops::get_tables(&conn, opt_str(params, "schema")).await)
 }
 
-pub fn get_columns(id: Value, _params: &Value) -> Value {
-    // TODO: return [{ name, data_type, is_nullable, column_default,
-    //                 is_primary_key, is_auto_increment, comment }].
-    ok_response(id, json!([]))
+pub async fn get_columns(id: Value, params: &Value) -> Value {
+    let (conn, table) = match (conn_params(params), req_str(params, "table")) {
+        (Ok(c), Ok(t)) => (c, t),
+        (Err(e), _) | (_, Err(e)) => return respond::<()>(id, Err(e)),
+    };
+    respond(
+        id,
+        ops::get_columns(&conn, table, opt_str(params, "schema")).await,
+    )
 }
 
-pub fn get_foreign_keys(id: Value, _params: &Value) -> Value {
-    ok_response(id, json!([]))
+pub async fn get_foreign_keys(id: Value, params: &Value) -> Value {
+    let (conn, table) = match (conn_params(params), req_str(params, "table")) {
+        (Ok(c), Ok(t)) => (c, t),
+        (Err(e), _) | (_, Err(e)) => return respond::<()>(id, Err(e)),
+    };
+    respond(
+        id,
+        ops::get_foreign_keys(&conn, table, opt_str(params, "schema")).await,
+    )
 }
 
-pub fn get_indexes(id: Value, _params: &Value) -> Value {
-    ok_response(id, json!([]))
+pub async fn get_indexes(id: Value, params: &Value) -> Value {
+    let (conn, table) = match (conn_params(params), req_str(params, "table")) {
+        (Ok(c), Ok(t)) => (c, t),
+        (Err(e), _) | (_, Err(e)) => return respond::<()>(id, Err(e)),
+    };
+    respond(
+        id,
+        ops::get_indexes(&conn, table, opt_str(params, "schema")).await,
+    )
 }
 
-pub fn get_views(id: Value, _params: &Value) -> Value {
-    ok_response(id, json!([]))
+pub async fn get_schema_snapshot(id: Value, params: &Value) -> Value {
+    let conn = match conn_params(params) {
+        Ok(c) => c,
+        Err(e) => return respond::<()>(id, Err(e)),
+    };
+    respond(
+        id,
+        ops::get_schema_snapshot(&conn, opt_str(params, "schema")).await,
+    )
 }
 
-pub fn get_view_definition(id: Value, _params: &Value) -> Value {
-    ok_response(id, Value::String(String::new()))
+pub async fn get_all_columns_batch(id: Value, params: &Value) -> Value {
+    let conn = match conn_params(params) {
+        Ok(c) => c,
+        Err(e) => return respond::<()>(id, Err(e)),
+    };
+    respond(
+        id,
+        ops::get_all_columns_batch(&conn, opt_str(params, "schema")).await,
+    )
 }
 
-pub fn get_view_columns(id: Value, _params: &Value) -> Value {
-    ok_response(id, json!([]))
+pub async fn get_all_foreign_keys_batch(id: Value, params: &Value) -> Value {
+    let conn = match conn_params(params) {
+        Ok(c) => c,
+        Err(e) => return respond::<()>(id, Err(e)),
+    };
+    respond(
+        id,
+        ops::get_all_foreign_keys_batch(&conn, opt_str(params, "schema")).await,
+    )
 }
 
-pub fn get_routines(id: Value, _params: &Value) -> Value {
-    ok_response(id, json!([]))
-}
-
-pub fn get_routine_parameters(id: Value, _params: &Value) -> Value {
-    ok_response(id, json!([]))
-}
-
-pub fn get_routine_definition(id: Value, _params: &Value) -> Value {
-    ok_response(id, Value::String(String::new()))
-}
-
-pub fn get_schema_snapshot(id: Value, _params: &Value) -> Value {
-    // Used for the ER diagram. Return
-    // [{ name, columns: [...], foreign_keys: [...] }].
-    ok_response(id, json!([]))
-}
-
-pub fn get_all_columns_batch(id: Value, _params: &Value) -> Value {
-    ok_response(id, json!({}))
-}
-
-pub fn get_all_foreign_keys_batch(id: Value, _params: &Value) -> Value {
-    ok_response(id, json!({}))
+pub async fn get_ai_schema_context(id: Value, params: &Value) -> Value {
+    let conn = match conn_params(params) {
+        Ok(c) => c,
+        Err(e) => return respond::<()>(id, Err(e)),
+    };
+    let max_tables = params
+        .get("max_tables")
+        .and_then(Value::as_u64)
+        .unwrap_or(20) as usize;
+    respond(
+        id,
+        ops::get_ai_schema_context(&conn, opt_str(params, "schema"), max_tables).await,
+    )
 }

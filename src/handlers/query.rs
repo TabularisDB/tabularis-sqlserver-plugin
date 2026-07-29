@@ -1,26 +1,76 @@
-//! Connection and query execution.
-//!
-//! `test_connection` and `ping` return success unconditionally — this is
-//! what lets the driver show up in the Tabularis connection picker right
-//! after `just dev-install`. Replace with real checks before shipping.
+//! Connection checks and query execution.
 
 use serde_json::{json, Value};
 
-use crate::rpc::{not_implemented, ok_response};
+use crate::driver::ops;
+use crate::rpc::{conn_params, req_str, respond};
 
-pub fn test_connection(id: Value, _params: &Value) -> Value {
-    // TODO: implement a real connectivity check (open a connection, run a
-    // trivial query, close it).
-    ok_response(id, json!({ "success": true }))
+pub async fn test_connection(id: Value, params: &Value) -> Value {
+    let conn = match conn_params(params) {
+        Ok(c) => c,
+        Err(e) => return respond::<()>(id, Err(e)),
+    };
+    respond(
+        id,
+        ops::test_connection(&conn)
+            .await
+            .map(|()| json!({ "success": true })),
+    )
 }
 
-pub fn execute_query(id: Value, _params: &Value) -> Value {
-    // TODO: run the SQL in params.query and return
-    //   { columns: [string], rows: [[any]], total_count: number, execution_time_ms: number }
-    not_implemented(id, "execute_query")
+/// Lightweight health check: reuses a pooled session, so it is cheaper than
+/// `test_connection` for the host's periodic liveness probing.
+pub async fn ping(id: Value, params: &Value) -> Value {
+    let conn = match conn_params(params) {
+        Ok(c) => c,
+        Err(e) => return respond::<()>(id, Err(e)),
+    };
+    respond(id, ops::test_connection(&conn).await.map(|()| Value::Null))
 }
 
-pub fn explain_query(id: Value, _params: &Value) -> Value {
-    // TODO: return the same shape as execute_query but for EXPLAIN.
-    not_implemented(id, "explain_query")
+fn limit_and_page(params: &Value) -> (Option<u32>, u32) {
+    let limit = params
+        .get("limit")
+        .and_then(Value::as_u64)
+        .and_then(|v| u32::try_from(v).ok());
+    let page = params
+        .get("page")
+        .and_then(Value::as_u64)
+        .and_then(|v| u32::try_from(v).ok())
+        .unwrap_or(1);
+    (limit, page)
+}
+
+pub async fn execute_query(id: Value, params: &Value) -> Value {
+    let (conn, query) = match (conn_params(params), req_str(params, "query")) {
+        (Ok(c), Ok(q)) => (c, q),
+        (Err(e), _) | (_, Err(e)) => return respond::<()>(id, Err(e)),
+    };
+    let (limit, page) = limit_and_page(params);
+    respond(id, ops::execute_query(&conn, query, limit, page).await)
+}
+
+pub async fn execute_query_batch(id: Value, params: &Value) -> Value {
+    let conn = match conn_params(params) {
+        Ok(c) => c,
+        Err(e) => return respond::<()>(id, Err(e)),
+    };
+    let queries: Vec<String> = match crate::rpc::req_field(params, "queries") {
+        Ok(q) => q,
+        Err(e) => return respond::<()>(id, Err(e)),
+    };
+    let (limit, page) = limit_and_page(params);
+    respond(id, ops::execute_batch(&conn, &queries, limit, page).await)
+}
+
+pub async fn explain_query(id: Value, params: &Value) -> Value {
+    let (conn, query) = match (conn_params(params), req_str(params, "query")) {
+        (Ok(c), Ok(q)) => (c, q),
+        (Err(e), _) | (_, Err(e)) => return respond::<()>(id, Err(e)),
+    };
+    let analyze = params
+        .get("analyze")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    respond(id, ops::explain_query(&conn, query, analyze).await)
 }

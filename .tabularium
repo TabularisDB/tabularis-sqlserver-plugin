@@ -1,36 +1,268 @@
 {
   "$schema": "https://tabularis.dev/schemas/plugin-manifest.json",
   "id": "sqlserver",
-  "name": "Sqlserver",
+  "name": "SQL Server",
   "version": "0.1.0",
-  "description": "Tabularis driver plugin for Sqlserver",
-  "default_port": 5432,
-  "default_username": "",
+  "description": "Microsoft SQL Server driver for Tabularis",
+  "default_port": 1433,
+  "default_username": "sa",
   "executable": "sqlserver-plugin",
   "capabilities": {
-    "schemas": false,
-    "views": false,
-    "routines": false,
+    "schemas": true,
+    "views": true,
+    "routines": true,
+    "routine_management": true,
+    "triggers": true,
     "file_based": false,
     "folder_based": false,
     "no_connection_required": false,
+    "connection_string": true,
+    "connection_string_example": "sqlserver://sa:password@localhost:1433/master",
     "identifier_quote": "\"",
+    "sql_dialect": "mssql",
     "alter_primary_key": false,
-    "alter_column": false,
-    "create_foreign_keys": false,
-    "manage_tables": false,
-    "readonly": true
+    "auto_increment_keyword": "IDENTITY(1,1)",
+    "serial_type": "",
+    "inline_pk": false,
+    "alter_column": true,
+    "create_foreign_keys": true,
+    "manage_tables": true,
+    "readonly": false,
+    "supports_ssl": true,
+    "explain": true
   },
   "data_types": [
     {
-      "name": "INTEGER",
+      "name": "TINYINT",
+      "category": "numeric",
+      "requires_length": false,
+      "requires_precision": false,
+      "supports_auto_increment": true
+    },
+    {
+      "name": "SMALLINT",
+      "category": "numeric",
+      "requires_length": false,
+      "requires_precision": false,
+      "supports_auto_increment": true
+    },
+    {
+      "name": "INT",
+      "category": "numeric",
+      "requires_length": false,
+      "requires_precision": false,
+      "supports_auto_increment": true
+    },
+    {
+      "name": "BIGINT",
+      "category": "numeric",
+      "requires_length": false,
+      "requires_precision": false,
+      "supports_auto_increment": true
+    },
+    {
+      "name": "DECIMAL",
+      "category": "numeric",
+      "requires_length": false,
+      "requires_precision": true,
+      "default_length": "18,2"
+    },
+    {
+      "name": "NUMERIC",
+      "category": "numeric",
+      "requires_length": false,
+      "requires_precision": true,
+      "default_length": "18,2"
+    },
+    {
+      "name": "SMALLMONEY",
       "category": "numeric",
       "requires_length": false,
       "requires_precision": false
     },
     {
+      "name": "MONEY",
+      "category": "numeric",
+      "requires_length": false,
+      "requires_precision": false
+    },
+    {
+      "name": "FLOAT",
+      "category": "numeric",
+      "requires_length": false,
+      "requires_precision": false
+    },
+    {
+      "name": "REAL",
+      "category": "numeric",
+      "requires_length": false,
+      "requires_precision": false
+    },
+    {
+      "name": "CHAR",
+      "category": "text",
+      "requires_length": true,
+      "requires_precision": false,
+      "default_length": "1"
+    },
+    {
+      "name": "VARCHAR",
+      "category": "text",
+      "requires_length": true,
+      "requires_precision": false,
+      "default_length": "255"
+    },
+    {
+      "name": "VARCHAR(MAX)",
+      "category": "text",
+      "requires_length": false,
+      "requires_precision": false
+    },
+    {
       "name": "TEXT",
-      "category": "string",
+      "category": "text",
+      "requires_length": false,
+      "requires_precision": false
+    },
+    {
+      "name": "NCHAR",
+      "category": "text",
+      "requires_length": true,
+      "requires_precision": false,
+      "default_length": "1"
+    },
+    {
+      "name": "NVARCHAR",
+      "category": "text",
+      "requires_length": true,
+      "requires_precision": false,
+      "default_length": "255"
+    },
+    {
+      "name": "NVARCHAR(MAX)",
+      "category": "text",
+      "requires_length": false,
+      "requires_precision": false
+    },
+    {
+      "name": "NTEXT",
+      "category": "text",
+      "requires_length": false,
+      "requires_precision": false
+    },
+    {
+      "name": "BINARY",
+      "category": "binary",
+      "requires_length": true,
+      "requires_precision": false,
+      "default_length": "1"
+    },
+    {
+      "name": "VARBINARY",
+      "category": "binary",
+      "requires_length": true,
+      "requires_precision": false,
+      "default_length": "255"
+    },
+    {
+      "name": "VARBINARY(MAX)",
+      "category": "binary",
+      "requires_length": false,
+      "requires_precision": false
+    },
+    {
+      "name": "IMAGE",
+      "category": "binary",
+      "requires_length": false,
+      "requires_precision": false
+    },
+    {
+      "name": "DATE",
+      "category": "datetime",
+      "requires_length": false,
+      "requires_precision": false
+    },
+    {
+      "name": "TIME",
+      "category": "datetime",
+      "requires_length": false,
+      "requires_precision": false
+    },
+    {
+      "name": "DATETIME",
+      "category": "datetime",
+      "requires_length": false,
+      "requires_precision": false
+    },
+    {
+      "name": "DATETIME2",
+      "category": "datetime",
+      "requires_length": false,
+      "requires_precision": false
+    },
+    {
+      "name": "SMALLDATETIME",
+      "category": "datetime",
+      "requires_length": false,
+      "requires_precision": false
+    },
+    {
+      "name": "DATETIMEOFFSET",
+      "category": "datetime",
+      "requires_length": false,
+      "requires_precision": false
+    },
+    {
+      "name": "BIT",
+      "category": "boolean",
+      "requires_length": false,
+      "requires_precision": false
+    },
+    {
+      "name": "UNIQUEIDENTIFIER",
+      "category": "other",
+      "requires_length": false,
+      "requires_precision": false
+    },
+    {
+      "name": "XML",
+      "category": "other",
+      "requires_length": false,
+      "requires_precision": false
+    },
+    {
+      "name": "SQL_VARIANT",
+      "category": "other",
+      "requires_length": false,
+      "requires_precision": false
+    },
+    {
+      "name": "ROWVERSION",
+      "category": "other",
+      "requires_length": false,
+      "requires_precision": false
+    },
+    {
+      "name": "TIMESTAMP",
+      "category": "other",
+      "requires_length": false,
+      "requires_precision": false
+    },
+    {
+      "name": "HIERARCHYID",
+      "category": "other",
+      "requires_length": false,
+      "requires_precision": false
+    },
+    {
+      "name": "GEOGRAPHY",
+      "category": "spatial",
+      "requires_length": false,
+      "requires_precision": false
+    },
+    {
+      "name": "GEOMETRY",
+      "category": "spatial",
       "requires_length": false,
       "requires_precision": false
     }
