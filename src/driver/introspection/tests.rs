@@ -137,7 +137,7 @@ fn is_string_type_covers_all_text_family() {
         "sysname",
     ] {
         assert!(is_string_type(t), "{} should be string-like", t);
-        // Case-insensitive — tiberius gives us lowercase, but sys.types
+        // Case-insensitive — the driver gives us lowercase, but sys.types
         // occasionally echoes mixed case via sysname aliases.
         assert!(is_string_type(&t.to_ascii_uppercase()));
     }

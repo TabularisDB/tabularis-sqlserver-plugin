@@ -21,24 +21,20 @@ pub async fn explain_showplan_xml(
     conn.simple_query(format!("SET {option} ON"))
         .await
         .map_err(|error| error.to_string())?
-        .into_results()
-        .await
-        .map_err(|error| error.to_string())?;
+        .into_results();
 
-    let query_result = match conn.simple_query(query).await {
-        Ok(stream) => stream
-            .into_results()
-            .await
-            .map_err(|error| error.to_string()),
-        Err(error) => Err(error.to_string()),
-    };
+    let query_result = conn
+        .simple_query(query)
+        .await
+        .map(|result| result.into_results())
+        .map_err(|error| error.to_string());
     let disable_result = conn
         .simple_query(format!("SET {option} OFF"))
         .await
-        .map_err(|error| error.to_string())?
-        .into_results()
-        .await
-        .map_err(|error| error.to_string());
+        .map_err(|error| error.to_string())
+        .map(|result| {
+            result.into_results();
+        });
 
     let result_sets = query_result?;
     disable_result?;

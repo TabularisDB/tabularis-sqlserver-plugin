@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Initial SQL Server driver: `tiberius` + `deadpool` pooling, TLS modes, session reset, startup scripts
+- Initial SQL Server driver: `mssql-tiberius-bridge` + `deadpool` pooling, TLS modes, session reset, startup scripts
 - Schema, table, column, PK/FK, index, view, routine, and trigger introspection
 - Query execution with pagination, CTE/DML classification, multiple result sets, and accurate affected rows (incl. DML `OUTPUT`)
 - INSERT/UPDATE/DELETE with composite primary keys and safe `IDENTITY_INSERT` recovery

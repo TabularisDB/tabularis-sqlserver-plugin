@@ -3,7 +3,7 @@
 
 use std::collections::HashMap;
 
-use tiberius::ToSql;
+use mssql_tiberius_bridge::ToSql;
 
 use crate::driver::helpers::{
     bracket_quote, build_delete_composite_sql, build_update_composite_sql, qualify,
@@ -22,9 +22,7 @@ pub async fn test_connection(params: &ConnectionParams) -> Result<(), String> {
     conn.simple_query("SELECT 1")
         .await
         .map_err(|e| e.to_string())?
-        .into_first_result()
-        .await
-        .map_err(|error| error.to_string())?;
+        .into_first_result();
     Ok(())
 }
 
@@ -35,9 +33,7 @@ pub async fn get_databases(params: &ConnectionParams) -> Result<Vec<String>, Str
         .simple_query("SELECT name FROM sys.databases WHERE database_id > 4 ORDER BY name")
         .await
         .map_err(|e| e.to_string())?
-        .into_first_result()
-        .await
-        .map_err(|error| error.to_string())?;
+        .into_first_result();
 
     let mut out = Vec::with_capacity(rows.len());
     for row in rows {
@@ -61,9 +57,7 @@ pub async fn get_schemas(params: &ConnectionParams) -> Result<Vec<String>, Strin
         )
         .await
         .map_err(|e| e.to_string())?
-        .into_first_result()
-        .await
-        .map_err(|error| error.to_string())?;
+        .into_first_result();
 
     let mut out = Vec::with_capacity(rows.len());
     for row in rows {
@@ -157,9 +151,7 @@ pub async fn create_view(
     conn.simple_query(sql)
         .await
         .map_err(|error| format!("Failed to create view: {error}"))?
-        .into_first_result()
-        .await
-        .map_err(|error| error.to_string())?;
+        .into_first_result();
     Ok(())
 }
 
@@ -178,9 +170,7 @@ pub async fn alter_view(
     conn.simple_query(sql)
         .await
         .map_err(|error| format!("Failed to alter view: {error}"))?
-        .into_first_result()
-        .await
-        .map_err(|error| error.to_string())?;
+        .into_first_result();
     Ok(())
 }
 
@@ -194,9 +184,7 @@ pub async fn drop_view(
     conn.simple_query(sql)
         .await
         .map_err(|error| format!("Failed to drop view: {error}"))?
-        .into_first_result()
-        .await
-        .map_err(|error| error.to_string())?;
+        .into_first_result();
     Ok(())
 }
 
@@ -361,20 +349,21 @@ pub async fn insert_record(
         },
     );
 
-    // Map each JSON value to a typed Tiberius parameter. Owned boxes live
+    // Map each JSON value to a typed SQL parameter. Owned boxes live
     // for the duration of the call so the borrowed `&dyn ToSql` slice is
     // valid.
-    let owned_params: Vec<Box<dyn tiberius::ToSql>> = columns
+    let owned_params: Vec<Box<dyn mssql_tiberius_bridge::ToSql>> = columns
         .iter()
         .map(|column| helpers::value_to_sql_param(&data[column]))
         .collect::<Result<_, _>>()?;
-    let params_slice: Vec<&dyn tiberius::ToSql> = owned_params.iter().map(|b| b.as_ref()).collect();
+    let params_slice: Vec<&dyn mssql_tiberius_bridge::ToSql> =
+        owned_params.iter().map(|b| b.as_ref()).collect();
 
-    let exec = conn
-        .execute(&sql, &params_slice)
+    let result = conn
+        .query(&sql, &params_slice)
         .await
         .map_err(|e| e.to_string())?;
-    Ok(exec.total())
+    crate::driver::affected_rows_from_query(result)
 }
 
 pub async fn update_record(
@@ -403,10 +392,10 @@ pub async fn update_record(
 
     let mut conn = acquire(params).await?;
     let result = conn
-        .execute(sql, &bound)
+        .query(helpers::wrap_dml_with_rowcount(&sql), &bound)
         .await
         .map_err(|error| error.to_string())?;
-    Ok(result.total())
+    crate::driver::affected_rows_from_query(result)
 }
 
 pub async fn delete_record(
@@ -432,10 +421,10 @@ pub async fn delete_record(
 
     let mut conn = acquire(params).await?;
     let result = conn
-        .execute(sql, &bound)
+        .query(helpers::wrap_dml_with_rowcount(&sql), &bound)
         .await
         .map_err(|error| error.to_string())?;
-    Ok(result.total())
+    crate::driver::affected_rows_from_query(result)
 }
 
 // --- DDL generation -----------------------------------------------------

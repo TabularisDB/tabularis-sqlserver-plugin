@@ -1,7 +1,7 @@
 //! Pure formatters for SQL Server temporal types.
 //!
 //! All functions here take a `chrono` value and return a `String`. They do
-//! **not** touch tiberius — the row-level extraction lives in
+//! **not** touch the database client — the row-level extraction lives in
 //! [`super::extract_value`], which calls into these helpers after pulling the
 //! right chrono type out of the row.
 //!

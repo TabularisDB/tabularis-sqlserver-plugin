@@ -28,8 +28,21 @@ const REQUEST_QUEUE_CAPACITY: usize = 64;
 
 const POOL_CLEANUP_INTERVAL: Duration = Duration::from_secs(600); // 10 minutes
 
-#[tokio::main]
-async fn main() {
+// The TDS client's async call chains produce large futures (especially in
+// debug builds); tokio's default 2 MiB worker stack overflows while polling
+// them, so give workers a wider stack.
+const WORKER_STACK_SIZE: usize = 16 * 1024 * 1024;
+
+fn main() {
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .thread_stack_size(WORKER_STACK_SIZE)
+        .build()
+        .expect("failed to build tokio runtime")
+        .block_on(run());
+}
+
+async fn run() {
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
 
     let cleanup_handle = tokio::spawn(run_pool_cleanup(shutdown_rx));
@@ -102,7 +115,9 @@ async fn run_worker(
         };
         let Some(line) = line else { break };
 
-        let response = rpc::handle_line(&line).await;
+        // Boxed: the dispatch future embeds every handler's state machine,
+        // so keep it on the heap rather than the worker stack.
+        let response = Box::pin(rpc::handle_line(&line)).await;
         let body = match serde_json::to_string(&response) {
             Ok(s) => s,
             Err(err) => format!(
