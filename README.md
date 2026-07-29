@@ -1,0 +1,67 @@
+# Sqlserver — Tabularis Plugin
+
+Driver plugin for [Tabularis](https://github.com/TabularisDB/tabularis).
+Generated with `@tabularis/create-plugin`.
+
+## Getting started
+
+```bash
+just dev-install       # build + install into ~/.local/share/tabularis/plugins/sqlserver
+```
+
+Then open Tabularis — your driver appears in the connection picker. `test_connection` is stubbed to return success so you can immediately see the plugin wired up.
+
+## What's implemented
+
+| Method | Status | Notes |
+|--------|--------|-------|
+| `test_connection` | placeholder | returns `{success: true}` unconditionally — replace with a real check before shipping |
+| `ping` | minimal | returns `null`; falls back to `test_connection` if missing |
+| `get_databases`, `get_schemas`, `get_tables`, `get_columns`, `get_indexes`, `get_foreign_keys` | stubs | return `[]` — fill these in to populate the sidebar |
+| `get_views*`, `get_routines*`, `create_view`, `alter_view`, `drop_view` | `-32601` | not implemented — flip `capabilities.views` / `capabilities.routines` once you wire these |
+| `execute_query`, `explain_query` | `-32601` | implement first if you want query execution in the UI |
+| `insert_record`, `update_record`, `delete_record` | `-32601` | implement for row editing support |
+| DDL generators, batch methods | `-32601` | implement as you light up the matching UI features |
+
+## Layout
+
+```
+src/
+├── main.rs            thin stdio loop
+├── rpc.rs             method dispatch + response helpers
+├── error.rs           plugin error type
+├── models.rs          ConnectionParams + common shapes
+├── client.rs          connection config (stub — implement your driver here)
+├── handlers/
+│   ├── metadata.rs    databases, schemas, tables, columns, indexes, FKs, views, routines
+│   ├── query.rs       test_connection, ping, execute_query, explain_query
+│   ├── crud.rs        insert_record, update_record, delete_record
+│   └── ddl.rs         CREATE/ALTER/DROP generators
+├── utils/
+│   ├── identifiers.rs quote_identifier(name) + tests
+│   └── pagination.rs  paginate(query, page, size) + tests
+└── bin/
+    └── test_plugin.rs local REPL for simulating Tabularis calls
+```
+
+## Testing without Tabularis
+
+```bash
+just repl
+# > get_tables
+# { "tables": [] }
+```
+
+## Publishing
+
+Tag a commit `v0.1.0` and push — the included GitHub Actions workflow builds for Linux (x64/arm64), macOS (x64/arm64), and Windows (x64), then attaches the zipped plugin bundles to the release. Submit a PR to `plugins/registry.json` in the Tabularis repo to publish to the in-app registry.
+
+## References
+
+- [Plugin guide](https://github.com/TabularisDB/tabularis/blob/main/plugins/PLUGIN_GUIDE.md)
+- [Manifest schema](https://github.com/TabularisDB/tabularis/blob/main/plugins/manifest.schema.json)
+- [Tabularis repo](https://github.com/TabularisDB/tabularis)
+
+## License
+
+Apache-2.0

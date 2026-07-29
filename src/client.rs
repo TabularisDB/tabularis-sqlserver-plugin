@@ -1,0 +1,27 @@
+//! Driver connection layer.
+//!
+//! This is where you wire the crate that actually talks to your database.
+//! For a pure example: https://github.com/TabularisDB/tabularis-duckdb-plugin
+//!
+//! The scaffolder leaves this file almost empty on purpose — your database
+//! library dictates the shape of `Client` and its methods.
+
+use crate::error::PluginError;
+use crate::models::ConnectionParams;
+
+#[allow(dead_code)]
+pub struct Client {
+    // TODO: hold the real connection/pool here.
+    #[allow(dead_code)]
+    params: ConnectionParams,
+}
+
+impl Client {
+    /// Build a client from connection params. Return a PluginError on failure.
+    #[allow(dead_code)]
+    pub fn connect(params: ConnectionParams) -> Result<Self, PluginError> {
+        // TODO: implement connection.
+        // For Sqlserver, replace with the real library call.
+        Ok(Self { params })
+    }
+}
