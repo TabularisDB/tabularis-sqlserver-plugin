@@ -18,6 +18,7 @@ use std::collections::BTreeSet;
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, ChildStdin, Command, Stdio};
 
+use base64::Engine as _;
 use serde_json::{json, Value};
 
 const TEST_SCHEMA: &str = "ss003";
@@ -670,6 +671,147 @@ fn explain_query_returns_showplan_xml_for_estimate_and_analyze() {
         assert!(raw.contains("ShowPlanXML"), "analyze={analyze}: {raw}");
         assert_eq!(plan["driver"], "sqlserver");
     }
+}
+
+#[test]
+fn blob_png_round_trip_supports_composite_keys_image_and_clean_null_errors() {
+    let mut plugin = Plugin::with_scratch_database();
+    plugin.reset_table(
+        "blob_round_trip",
+        "tenant_id INT NOT NULL, record_id INT NOT NULL, \
+         png VARBINARY(MAX) NOT NULL, legacy IMAGE NULL, nullable VARBINARY(MAX) NULL, \
+         version ROWVERSION, PRIMARY KEY (tenant_id, record_id)",
+    );
+    let png = base64::engine::general_purpose::STANDARD
+        .decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=")
+        .expect("valid PNG fixture");
+    let png_hex: String = png.iter().map(|byte| format!("{byte:02X}")).collect();
+    plugin.execute(format!(
+        "INSERT INTO [{TEST_SCHEMA}].[blob_round_trip] \
+         (tenant_id, record_id, png, legacy, nullable) \
+         VALUES (7, 9, 0x{png_hex}, 0x{png_hex}, NULL)"
+    ));
+    let row = json!({ "tenant_id": 7, "record_id": 9 });
+
+    let wire = plugin.call_ok(
+        "fetch_blob_as_data_url",
+        json!({
+            "params": connection_params(), "schema": TEST_SCHEMA,
+            "table": "blob_round_trip", "col_name": "png", "pk_map": row,
+            "max_blob_size": png.len()
+        }),
+    );
+    assert_eq!(
+        wire,
+        json!(format!(
+            "BLOB:{}:image/png:{}",
+            png.len(),
+            base64::engine::general_purpose::STANDARD.encode(&png)
+        ))
+    );
+
+    let legacy_wire = plugin.call_ok(
+        "fetch_blob_as_data_url",
+        json!({
+            "params": connection_params(), "schema": TEST_SCHEMA,
+            "table": "blob_round_trip", "col_name": "legacy", "pk_map": row,
+            "max_blob_size": png.len()
+        }),
+    );
+    assert!(legacy_wire
+        .as_str()
+        .expect("IMAGE preview wire string")
+        .starts_with(&format!("BLOB:{}:image/png:", png.len())));
+
+    let export_path = std::env::temp_dir().join(format!(
+        "tabularis-sqlserver-ss012-png-{}.png",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_file(&export_path);
+    assert_eq!(
+        plugin.call_ok(
+            "save_blob_to_file",
+            json!({
+                "params": connection_params(), "schema": TEST_SCHEMA,
+                "table": "blob_round_trip", "col_name": "png", "pk_map": row,
+                "file_path": export_path.to_string_lossy()
+            }),
+        ),
+        Value::Null
+    );
+    assert_eq!(std::fs::read(&export_path).expect("exported PNG"), png);
+    std::fs::remove_file(&export_path).expect("remove exported PNG");
+
+    let null_path = std::env::temp_dir().join(format!(
+        "tabularis-sqlserver-ss012-null-{}.bin",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_file(&null_path);
+    let null_error = plugin.call_error(
+        "save_blob_to_file",
+        json!({
+            "params": connection_params(), "schema": TEST_SCHEMA,
+            "table": "blob_round_trip", "col_name": "nullable", "pk_map": row,
+            "file_path": null_path.to_string_lossy()
+        }),
+    );
+    assert!(null_error.contains("NULL"), "{null_error}");
+    assert!(!null_path.exists(), "NULL must not create a zero-byte file");
+
+    let rowversion_error = plugin.call_error(
+        "fetch_blob_as_data_url",
+        json!({
+            "params": connection_params(), "schema": TEST_SCHEMA,
+            "table": "blob_round_trip", "col_name": "version", "pk_map": row,
+            "max_blob_size": 8
+        }),
+    );
+    assert!(rowversion_error.contains("concurrency token"));
+}
+
+#[test]
+fn varbinary_max_preview_ceiling_rejects_before_encoding_but_export_still_works() {
+    let mut plugin = Plugin::with_scratch_database();
+    plugin.reset_table(
+        "blob_ceiling",
+        "id INT PRIMARY KEY, payload VARBINARY(MAX) NOT NULL",
+    );
+    plugin.execute(format!(
+        "INSERT INTO [{TEST_SCHEMA}].[blob_ceiling] (id, payload) \
+         VALUES (1, CONVERT(VARBINARY(MAX), REPLICATE(CAST('x' AS VARCHAR(MAX)), 4096)))"
+    ));
+
+    let error = plugin.call_error(
+        "fetch_blob_as_data_url",
+        json!({
+            "params": connection_params(), "schema": TEST_SCHEMA,
+            "table": "blob_ceiling", "col_name": "payload", "pk_map": { "id": 1 },
+            "max_blob_size": 1024
+        }),
+    );
+    assert!(error.contains("4096 bytes"), "{error}");
+    assert!(error.contains("max_blob_size of 1024 bytes"), "{error}");
+
+    let export_path = std::env::temp_dir().join(format!(
+        "tabularis-sqlserver-ss012-large-{}.bin",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_file(&export_path);
+    plugin.call_ok(
+        "save_blob_to_file",
+        json!({
+            "params": connection_params(), "schema": TEST_SCHEMA,
+            "table": "blob_ceiling", "col_name": "payload", "pk_map": { "id": 1 },
+            "file_path": export_path.to_string_lossy()
+        }),
+    );
+    assert_eq!(
+        std::fs::metadata(&export_path)
+            .expect("exported large VARBINARY(MAX)")
+            .len(),
+        4096
+    );
+    std::fs::remove_file(export_path).expect("remove large BLOB export");
 }
 
 #[test]

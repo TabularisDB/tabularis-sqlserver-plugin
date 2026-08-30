@@ -1,3 +1,4 @@
+pub mod blob;
 pub mod crud;
 pub mod ddl;
 pub mod metadata;

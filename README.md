@@ -107,6 +107,20 @@ All common SQL Server types are supported for column creation and value extracti
 
 `BIGINT` values outside JavaScript's safe integer range are delivered as strings so they round-trip without precision loss.
 
+### Binary export and preview
+
+`BINARY`, `VARBINARY` including `VARBINARY(MAX)`, and legacy `IMAGE` values can
+be exported as raw files or previewed with MIME detection. `NULL` returns a
+clear error instead of creating an empty file. `ROWVERSION` and its deprecated
+`TIMESTAMP` synonym are excluded because they are server-generated concurrency
+tokens, not user BLOB data.
+
+BLOB previews are bounded by `max_blob_size` (100 MiB when the host does not
+provide a value). SQL Server checks `DATALENGTH` before returning the bytes; an
+oversized value produces an error with the actual and configured sizes and can
+still be exported directly to a file without passing through base64 or a
+JSON-RPC response.
+
 ## Installation
 
 ### Automatic (via Tabularis)

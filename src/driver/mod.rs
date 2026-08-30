@@ -4,6 +4,7 @@
 //! The driver supports schema introspection, table/view DDL, foreign keys,
 //! triggers, and stored-routine management.
 
+pub mod blob;
 pub mod ddl;
 pub mod explain;
 pub mod extract;

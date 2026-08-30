@@ -10,6 +10,7 @@ publish = false
 base64 = "0.22"
 chrono = "0.4"
 deadpool = "0.12"
+infer = "0.22"
 # SQL Server driver — Microsoft's mssql-tds protocol implementation behind a
 # tiberius-compatible API, pooled with deadpool. Keep the exact preview pin:
 # preview releases may change bridge semantics without a stable-version signal.

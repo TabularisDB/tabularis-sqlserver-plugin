@@ -9,7 +9,7 @@ use crate::driver::helpers::{
     bracket_quote, build_delete_composite_sql, build_update_composite_sql, qualify,
 };
 use crate::driver::{
-    acquire, ddl, execute_on_connection, explain, helpers, introspection, routines, triggers,
+    acquire, blob, ddl, execute_on_connection, explain, helpers, introspection, routines, triggers,
 };
 use crate::models::{
     AiSchemaContext, BatchStatementResult, ColumnDefinition, ConnectionParams, ForeignKey, Index,
@@ -425,6 +425,37 @@ pub async fn delete_record(
         .await
         .map_err(|error| error.to_string())?;
     crate::driver::affected_rows_from_query(result)
+}
+
+// --- BLOB export and preview --------------------------------------------
+
+pub async fn save_blob_to_file(
+    params: &ConnectionParams,
+    table: &str,
+    col_name: &str,
+    pk_map: &PkMap,
+    schema: Option<&str>,
+    file_path: &str,
+) -> Result<(), String> {
+    blob::validate_writable_file_path(file_path)?;
+    let bytes = blob::fetch_blob_bytes(params, table, col_name, pk_map, schema, None).await?;
+    tokio::fs::write(file_path, bytes)
+        .await
+        .map_err(|error| format!("Failed to write SQL Server BLOB to '{file_path}': {error}"))
+}
+
+pub async fn fetch_blob_as_data_url(
+    params: &ConnectionParams,
+    table: &str,
+    col_name: &str,
+    pk_map: &PkMap,
+    schema: Option<&str>,
+    max_blob_size: u64,
+) -> Result<String, String> {
+    let bytes =
+        blob::fetch_blob_bytes(params, table, col_name, pk_map, schema, Some(max_blob_size))
+            .await?;
+    blob::encode_blob_full(&bytes, max_blob_size)
 }
 
 // --- DDL generation -----------------------------------------------------

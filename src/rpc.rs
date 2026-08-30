@@ -4,7 +4,7 @@ use serde::Serialize;
 use serde_json::{json, Value};
 
 use crate::connection::resolve_connection_params;
-use crate::handlers::{crud, ddl, metadata, query, routines, triggers, views};
+use crate::handlers::{blob, crud, ddl, metadata, query, routines, triggers, views};
 use crate::models::ConnectionParams;
 
 /// Parse one JSON-RPC line and return the response value (serialised
@@ -73,6 +73,10 @@ pub async fn handle_line(line: &str) -> Value {
         "insert_record" => crud::insert_record(id, &params).await,
         "update_record" => crud::update_record(id, &params).await,
         "delete_record" => crud::delete_record(id, &params).await,
+
+        // BLOB export and preview.
+        "save_blob_to_file" => blob::save_blob_to_file(id, &params).await,
+        "fetch_blob_as_data_url" => blob::fetch_blob_as_data_url(id, &params).await,
 
         // DDL.
         "get_create_table_sql" => ddl::get_create_table_sql(id, &params).await,
