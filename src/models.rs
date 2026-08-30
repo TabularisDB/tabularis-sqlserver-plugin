@@ -208,6 +208,33 @@ pub struct TriggerInfo {
     pub definition: Option<String>,
 }
 
+/// One database principal backed by a SQL Server login. The host's `host`
+/// field carries the mapped login name for SQL Server.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct DbUserInfo {
+    pub user: String,
+    pub host: String,
+    pub locked: bool,
+}
+
+/// SQL Server privilege names accepted by the three host scope lists.
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct DbPrivilegeCatalog {
+    pub database: Vec<String>,
+    pub global: Vec<String>,
+    pub table: Vec<String>,
+}
+
+/// Direct grants at one database, schema, or object scope. SQL Server maps
+/// those levels to `(None, None)`, `(Some(schema), None)`, and
+/// `(Some(schema), Some(object))` on the host wire shape.
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+pub struct DbUserGrantSet {
+    pub database: Option<String>,
+    pub table: Option<String>,
+    pub privileges: Vec<String>,
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ColumnDefinition {
     pub name: String,

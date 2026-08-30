@@ -10,11 +10,12 @@ use crate::driver::helpers::{
 };
 use crate::driver::{
     acquire, blob, ddl, execute_on_connection, explain, helpers, introspection, routines, triggers,
+    users,
 };
 use crate::models::{
-    AiSchemaContext, BatchStatementResult, ColumnDefinition, ConnectionParams, ForeignKey, Index,
-    PkMap, QueryResult, RoutineCallArg, RoutineInfo, RoutineParameter, TableColumn, TableInfo,
-    TableSchema, TriggerInfo, ViewInfo,
+    AiSchemaContext, BatchStatementResult, ColumnDefinition, ConnectionParams, DbPrivilegeCatalog,
+    DbUserGrantSet, DbUserInfo, ForeignKey, Index, PkMap, QueryResult, RoutineCallArg, RoutineInfo,
+    RoutineParameter, TableColumn, TableInfo, TableSchema, TriggerInfo, ViewInfo,
 };
 
 pub async fn test_connection(params: &ConnectionParams) -> Result<(), String> {
@@ -264,6 +265,88 @@ pub async fn drop_routine(
 ) -> Result<(), String> {
     let sql = routines::drop_routine_sql(routine_name, routine_type, schema);
     execute_query(params, &sql, None, 1).await.map(|_| ())
+}
+
+// --- Database users and privileges ------------------------------------
+
+pub fn get_db_privilege_catalog() -> DbPrivilegeCatalog {
+    users::privilege_catalog()
+}
+
+pub async fn get_db_users(params: &ConnectionParams) -> Result<Vec<DbUserInfo>, String> {
+    let mut conn = acquire(params).await?;
+    users::get_users(&mut conn).await
+}
+
+pub async fn create_db_user(
+    params: &ConnectionParams,
+    user: &str,
+    login: &str,
+    password: &str,
+) -> Result<(), String> {
+    let mut conn = acquire(params).await?;
+    users::create_user(&mut conn, user, login, password).await
+}
+
+pub async fn drop_db_user(
+    params: &ConnectionParams,
+    user: &str,
+    login: &str,
+) -> Result<(), String> {
+    let mut conn = acquire(params).await?;
+    users::drop_user(&mut conn, user, login).await
+}
+
+pub async fn set_db_user_password(
+    params: &ConnectionParams,
+    user: &str,
+    login: &str,
+    password: &str,
+) -> Result<(), String> {
+    let mut conn = acquire(params).await?;
+    users::set_password(&mut conn, user, login, password).await
+}
+
+pub async fn get_db_user_grants(
+    params: &ConnectionParams,
+    user: &str,
+    login: &str,
+) -> Result<Vec<String>, String> {
+    let mut conn = acquire(params).await?;
+    users::get_grants(&mut conn, user, login).await
+}
+
+pub async fn get_db_user_privileges(
+    params: &ConnectionParams,
+    user: &str,
+    login: &str,
+) -> Result<Vec<DbUserGrantSet>, String> {
+    let mut conn = acquire(params).await?;
+    users::get_privileges(&mut conn, user, login).await
+}
+
+#[allow(clippy::too_many_arguments)]
+pub async fn apply_db_user_privileges(
+    params: &ConnectionParams,
+    user: &str,
+    login: &str,
+    database: Option<&str>,
+    table: Option<&str>,
+    privileges: &[String],
+    grant: bool,
+) -> Result<(), String> {
+    let mut conn = acquire(params).await?;
+    users::apply_privileges(
+        &mut conn,
+        params.database.primary(),
+        user,
+        login,
+        database,
+        table,
+        privileges,
+        grant,
+    )
+    .await
 }
 
 // --- Query execution ---------------------------------------------------

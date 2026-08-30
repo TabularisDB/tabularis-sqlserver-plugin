@@ -27,6 +27,7 @@ The client was swapped to Microsoft's protocol implementation to align the plugi
 - [Connection Configuration](#connection-configuration)
 - [Plugin Settings](#plugin-settings)
 - [Supported Data Types](#supported-data-types)
+- [Database Users and Privileges](#database-users-and-privileges)
 - [Installation](#installation)
 - [Known Limitations](#known-limitations)
 - [Building from Source](#building-from-source)
@@ -43,6 +44,7 @@ The client was swapped to Microsoft's protocol implementation to align the plugi
 - INSERT/UPDATE/DELETE with composite primary keys and safe `IDENTITY_INSERT` recovery
 - Table/view/index/foreign-key DDL and safe `ALTER COLUMN` generation
 - Trigger creation, editing, and removal
+- SQL-authenticated database-user, login, role, and privilege management
 - Procedure/function management, typed `OUT`/`INOUT` variables, and table-valued functions
 - Static and runtime execution plans through `SHOWPLAN_XML` / `STATISTICS XML`, rendered in Tabularis's Visual EXPLAIN
 - JavaScript-safe `BIGINT` extraction and broad SQL Server type handling
@@ -144,6 +146,40 @@ provide a value). SQL Server checks `DATALENGTH` before returning the bytes; an
 oversized value produces an error with the actual and configured sizes and can
 still be exported directly to a file without passing through base64 or a
 JSON-RPC response.
+
+## Database Users and Privileges
+
+For this plugin a **database user** means a database-scoped SQL user mapped to
+a server-scoped SQL login. In Tabularis's account display, `user` is the
+principal in the connected database and the host-shaped field after `@` is the
+mapped login name; it is not a network host. Windows, Azure AD, certificate,
+contained, orphaned, and login-less users are intentionally not listed or
+managed. Creating an account creates the login first and then its mapped user;
+dropping it drops the user first and then the login. SQL Server's own ownership
+checks are preserved, so a user that owns a schema or object must have that
+ownership transferred before it can be dropped.
+
+The host protocol's three MySQL-named scope shapes map to SQL Server as follows:
+
+| Host wire scope | SQL Server scope |
+|-----------------|------------------|
+| `database = null`, `table = null` | Connected database |
+| `database = schema`, `table = null` | Schema |
+| `database = schema`, `table = object` | Object |
+
+The privilege catalog follows the same mapping: its `global` entries are the
+extra database-only permissions, `database` entries are permissions shared by
+database and schema scopes, and `table` entries are object permissions.
+Tabularis computes a requested checkbox diff, and the plugin checks the current
+direct permissions again before applying only the required `GRANT` or `REVOKE`
+statements in a transaction.
+
+The parsed checkbox view contains direct grants only. The raw grants view also
+labels role memberships, permissions inherited through roles, grants with
+grant option, and direct `DENY` entries, so inherited rights are never shown as
+if they were direct grants. Because SQL Server `DENY` overrides `GRANT`, the
+plugin refuses to alter a denied permission; remove that `DENY` explicitly in
+SQL before managing the permission through Tabularis.
 
 ## Installation
 

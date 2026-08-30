@@ -13,6 +13,7 @@
     "routines": true,
     "routine_management": true,
     "triggers": true,
+    "user_management": true,
     "file_based": false,
     "folder_based": false,
     "no_connection_required": false,

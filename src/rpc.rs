@@ -4,7 +4,7 @@ use serde::Serialize;
 use serde_json::{json, Value};
 
 use crate::connection::resolve_connection_params;
-use crate::handlers::{blob, crud, ddl, metadata, query, routines, triggers, views};
+use crate::handlers::{blob, crud, ddl, metadata, query, routines, triggers, users, views};
 use crate::models::ConnectionParams;
 use crate::settings;
 
@@ -69,6 +69,16 @@ pub async fn handle_line(line: &str) -> Value {
         "get_trigger_definition" => triggers::get_trigger_definition(id, &params).await,
         "create_trigger" => triggers::create_trigger(id, &params).await,
         "drop_trigger" => triggers::drop_trigger(id, &params).await,
+
+        // Database users and privileges.
+        "get_db_privilege_catalog" => users::get_db_privilege_catalog(id).await,
+        "get_db_users" => users::get_db_users(id, &params).await,
+        "create_db_user" => users::create_db_user(id, &params).await,
+        "drop_db_user" => users::drop_db_user(id, &params).await,
+        "set_db_user_password" => users::set_db_user_password(id, &params).await,
+        "get_db_user_grants" => users::get_db_user_grants(id, &params).await,
+        "get_db_user_privileges" => users::get_db_user_privileges(id, &params).await,
+        "apply_db_user_privileges" => users::apply_db_user_privileges(id, &params).await,
 
         // Query execution.
         "execute_query" => query::execute_query(id, &params).await,

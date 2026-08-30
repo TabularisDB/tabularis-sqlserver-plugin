@@ -16,6 +16,7 @@ pub mod routines;
 pub mod showplan;
 pub mod triggers;
 pub mod types;
+pub mod users;
 pub mod version;
 
 use mssql_tds::connection::tds_client::{ResultSet, ResultSetClient};

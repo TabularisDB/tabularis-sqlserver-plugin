@@ -862,3 +862,185 @@ fn connection_string_only_connects_for_url_and_keyword_syntaxes() {
         assert_eq!(result, json!({ "success": true }), "{syntax} syntax");
     }
 }
+
+#[test]
+fn database_user_lifecycle_privilege_diff_roles_and_ownership_guard() {
+    const LOGIN: &str = "ss014_login";
+    const USER: &str = "ss014_user";
+    const ROLE: &str = "ss014_role";
+    const OWNED_SCHEMA: &str = "ss014_owned";
+    const PASSWORD_1: &str = "Ss014!InitialPass9";
+    const PASSWORD_2: &str = "Ss014!ChangedPass9";
+
+    let mut plugin = Plugin::with_scratch_database();
+    plugin.execute(format!(
+        "IF SCHEMA_ID(N'{OWNED_SCHEMA}') IS NOT NULL BEGIN \
+             ALTER AUTHORIZATION ON SCHEMA::[{OWNED_SCHEMA}] TO [dbo]; \
+             DROP SCHEMA [{OWNED_SCHEMA}]; \
+         END; \
+         IF DATABASE_PRINCIPAL_ID(N'{ROLE}') IS NOT NULL \
+            AND DATABASE_PRINCIPAL_ID(N'{USER}') IS NOT NULL \
+             ALTER ROLE [{ROLE}] DROP MEMBER [{USER}]; \
+         IF DATABASE_PRINCIPAL_ID(N'{USER}') IS NOT NULL DROP USER [{USER}]; \
+         IF DATABASE_PRINCIPAL_ID(N'{ROLE}') IS NOT NULL DROP ROLE [{ROLE}]; \
+         IF SUSER_ID(N'{LOGIN}') IS NOT NULL DROP LOGIN [{LOGIN}]; \
+         DROP TABLE IF EXISTS [{TEST_SCHEMA}].[ss014_permissions]; \
+         CREATE TABLE [{TEST_SCHEMA}].[ss014_permissions] \
+             (id INT PRIMARY KEY, value NVARCHAR(20) NOT NULL)"
+    ));
+
+    let catalog = plugin.call_ok("get_db_privilege_catalog", json!({}));
+    assert!(catalog["database"]
+        .as_array()
+        .expect("database catalog")
+        .contains(&json!("SELECT")));
+    assert!(catalog["global"]
+        .as_array()
+        .expect("database-only catalog")
+        .contains(&json!("SHOWPLAN")));
+    assert!(catalog["table"]
+        .as_array()
+        .expect("object catalog")
+        .contains(&json!("UPDATE")));
+
+    plugin.call_ok(
+        "create_db_user",
+        json!({
+            "params": connection_params(), "user": USER, "host": LOGIN,
+            "password": PASSWORD_1
+        }),
+    );
+    let users = plugin.call_ok("get_db_users", json!({ "params": connection_params() }));
+    assert!(users
+        .as_array()
+        .expect("users array")
+        .iter()
+        .any(|account| { account == &json!({ "user": USER, "host": LOGIN, "locked": false }) }));
+
+    plugin.call_ok(
+        "set_db_user_password",
+        json!({
+            "params": connection_params(), "user": USER, "host": LOGIN,
+            "password": PASSWORD_2
+        }),
+    );
+    plugin.execute(format!(
+        "CREATE ROLE [{ROLE}]; \
+         GRANT UPDATE ON OBJECT::[{TEST_SCHEMA}].[ss014_permissions] TO [{ROLE}]; \
+         ALTER ROLE [{ROLE}] ADD MEMBER [{USER}]"
+    ));
+    for (database, table, privileges) in [
+        (Value::Null, Value::Null, vec!["SELECT"]),
+        (json!(TEST_SCHEMA), Value::Null, vec!["EXECUTE"]),
+        (
+            json!(TEST_SCHEMA),
+            json!("ss014_permissions"),
+            vec!["SELECT", "INSERT"],
+        ),
+    ] {
+        let request = json!({
+            "params": connection_params(), "user": USER, "host": LOGIN,
+            "database": database, "table": table,
+            "privileges": privileges, "grant": true
+        });
+        plugin.call_ok("apply_db_user_privileges", request.clone());
+        // Applying an already-satisfied request exercises the server-side diff.
+        plugin.call_ok("apply_db_user_privileges", request);
+    }
+
+    let parsed = plugin.call_ok(
+        "get_db_user_privileges",
+        json!({ "params": connection_params(), "user": USER, "host": LOGIN }),
+    );
+    let object_scope = parsed
+        .as_array()
+        .expect("grant sets")
+        .iter()
+        .find(|scope| scope["database"] == TEST_SCHEMA && scope["table"] == "ss014_permissions")
+        .expect("direct object grant");
+    assert!(object_scope["privileges"]
+        .as_array()
+        .expect("object privileges")
+        .contains(&json!("SELECT")));
+    assert!(object_scope["privileges"]
+        .as_array()
+        .expect("object privileges")
+        .contains(&json!("INSERT")));
+    assert!(
+        !object_scope["privileges"]
+            .as_array()
+            .expect("object privileges")
+            .contains(&json!("UPDATE")),
+        "inherited rights must not look direct"
+    );
+
+    let raw = plugin.call_ok(
+        "get_db_user_grants",
+        json!({ "params": connection_params(), "user": USER, "host": LOGIN }),
+    );
+    let raw = raw.as_array().expect("raw grants");
+    assert!(raw.iter().any(|line| line
+        .as_str()
+        .is_some_and(|line| { line.contains("ROLE MEMBERSHIP") && line.contains(ROLE) })));
+    assert!(raw.iter().any(|line| line
+        .as_str()
+        .is_some_and(|line| { line.contains("INHERITED VIA ROLE") && line.contains("UPDATE") })));
+
+    plugin.call_ok(
+        "apply_db_user_privileges",
+        json!({
+            "params": connection_params(), "user": USER, "host": LOGIN,
+            "database": TEST_SCHEMA, "table": "ss014_permissions",
+            "privileges": ["SELECT", "INSERT"], "grant": false
+        }),
+    );
+    plugin.execute(format!(
+        "DENY DELETE ON OBJECT::[{TEST_SCHEMA}].[ss014_permissions] TO [{USER}]"
+    ));
+    let deny_error = plugin.call_error(
+        "apply_db_user_privileges",
+        json!({
+            "params": connection_params(), "user": USER, "host": LOGIN,
+            "database": TEST_SCHEMA, "table": "ss014_permissions",
+            "privileges": ["DELETE"], "grant": true
+        }),
+    );
+    assert!(deny_error.contains("DENY"), "{deny_error}");
+    plugin.execute(format!(
+        "REVOKE DELETE ON OBJECT::[{TEST_SCHEMA}].[ss014_permissions] FROM [{USER}]"
+    ));
+    plugin.execute(format!(
+        "CREATE SCHEMA [{OWNED_SCHEMA}] AUTHORIZATION [{USER}]"
+    ));
+
+    let ownership_error = plugin.call_error(
+        "drop_db_user",
+        json!({ "params": connection_params(), "user": USER, "host": LOGIN }),
+    );
+    assert!(
+        ownership_error.contains("schema or object"),
+        "{ownership_error}"
+    );
+    assert!(ownership_error.contains("owns"), "{ownership_error}");
+
+    plugin.execute(format!(
+        "ALTER AUTHORIZATION ON SCHEMA::[{OWNED_SCHEMA}] TO [dbo]; \
+         DROP SCHEMA [{OWNED_SCHEMA}]; \
+         ALTER ROLE [{ROLE}] DROP MEMBER [{USER}]; \
+         DROP ROLE [{ROLE}]"
+    ));
+    plugin.call_ok(
+        "drop_db_user",
+        json!({ "params": connection_params(), "user": USER, "host": LOGIN }),
+    );
+    let users = plugin.call_ok("get_db_users", json!({ "params": connection_params() }));
+    assert!(!users
+        .as_array()
+        .expect("users array")
+        .iter()
+        .any(|account| { account["user"] == USER || account["host"] == LOGIN }));
+    let login = plugin.execute(format!(
+        "SELECT COUNT(*) AS login_count FROM sys.server_principals WHERE name = N'{LOGIN}'"
+    ));
+    assert_eq!(login["rows"], json!([[0]]));
+}
