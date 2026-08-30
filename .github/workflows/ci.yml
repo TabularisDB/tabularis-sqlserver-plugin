@@ -5,6 +5,9 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+    # Default types miss title-only edits. Label changes must also re-run the
+    # version suggestion because the prerelease channel comes from a label.
+    types: [opened, edited, reopened, synchronize, labeled, unlabeled]
   schedule:
     # Weekly cargo-audit sweep for advisories disclosed after dependencies land.
     # Use an off-peak minute rather than :00 or :30.
@@ -81,6 +84,226 @@ jobs:
           SQLSERVER_TEST_PASSWORD: "Str0ng!Passw0rd"
           SQLSERVER_TEST_DATABASE: tabularis_test
         run: cargo test --test live_db -- --test-threads=1
+
+  pr-title:
+    name: PR title (Conventional Commits)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+    steps:
+      - uses: amannn/action-semantic-pull-request@v6
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  version-suggestion:
+    name: Version suggestion
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      # Classify the PR title's Conventional Commits type + breaking-change
+      # flag into a version-bump class. Requires the prerelease:* label to
+      # know which channel (alpha/beta/rc/stable) to suggest — see README's
+      # "Contributing: PR Titles & Versioning" for the full convention.
+      - name: Classify PR title and resolve prerelease channel
+        id: classify
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_LABELS: ${{ toJson(github.event.pull_request.labels) }}
+        run: |
+          PATTERN='^([a-zA-Z]+)(\(([^)]+)\))?(!)?: (.+)$'
+          if [[ "$PR_TITLE" =~ $PATTERN ]]; then
+            TYPE="${BASH_REMATCH[1]}"
+            BANG="${BASH_REMATCH[4]}"
+          else
+            echo "::error::PR title does not match Conventional Commits format (type: subject) — cannot classify."
+            exit 1
+          fi
+
+          BREAKING=false
+          [ -n "$BANG" ] && BREAKING=true
+          if echo "$PR_BODY" | grep -qiE "^BREAKING[ -]CHANGE:"; then
+            BREAKING=true
+          fi
+
+          case "$TYPE" in
+            feat) CLASS=minor ;;
+            fix|refactor|perf) CLASS=patch ;;
+            docs|style|chore|test|ci|build) CLASS=none ;;
+            *) CLASS=none ;;
+          esac
+          [ "$BREAKING" = true ] && CLASS=major
+
+          CHANNEL=$(echo "$PR_LABELS" | jq -r '[.[] | select(.name | startswith("prerelease:")) | .name][0] // ""' | sed 's/^prerelease://')
+          if [ -z "$CHANNEL" ]; then
+            echo "::error::No prerelease:alpha|beta|rc|stable label found on this PR. Add one so the version suggestion knows which channel to target — see README's 'Contributing: PR Titles & Versioning'."
+            exit 1
+          fi
+          case "$CHANNEL" in
+            alpha|beta|rc|stable) ;;
+            *) echo "::error::Unrecognized prerelease label value '$CHANNEL' — expected alpha, beta, rc, or stable."; exit 1 ;;
+          esac
+
+          echo "type=$TYPE" >> "$GITHUB_OUTPUT"
+          echo "breaking=$BREAKING" >> "$GITHUB_OUTPUT"
+          echo "class=$CLASS" >> "$GITHUB_OUTPUT"
+          echo "channel=$CHANNEL" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve baseline version
+        id: baseline
+        run: |
+          git fetch origin main --tags --quiet
+          TAG=$(git -C . describe --tags --abbrev=0 origin/main 2>/dev/null || true)
+          if [ -n "$TAG" ]; then
+            BASELINE="${TAG#v}"
+          else
+            BASELINE=$(git show origin/main:.tabularium | jq -r .version)
+          fi
+          echo "version=$BASELINE" >> "$GITHUB_OUTPUT"
+
+      - name: Compute suggestion, manage comment
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const classification = "${{ steps.classify.outputs.class }}";
+            const channel = "${{ steps.classify.outputs.channel }}";
+            const type = "${{ steps.classify.outputs.type }}";
+            const breaking = "${{ steps.classify.outputs.breaking }}" === "true";
+            const baselineStr = "${{ steps.baseline.outputs.version }}";
+            const marker = "<!-- version-suggestion-bot";
+
+            function parseVersion(v) {
+              const m = v.match(/^(\d+)\.(\d+)\.(\d+)(?:-([a-zA-Z]+)\.(\d+))?$/);
+              if (!m) throw new Error(`Cannot parse version: ${v}`);
+              return {
+                major: Number(m[1]), minor: Number(m[2]), patch: Number(m[3]),
+                stage: m[4] || null, stageNum: m[5] ? Number(m[5]) : null,
+              };
+            }
+            function formatVersion(v) {
+              const base = `${v.major}.${v.minor}.${v.patch}`;
+              return v.stage ? `${base}-${v.stage}.${v.stageNum}` : base;
+            }
+            function bumpStable(v, cls) {
+              const out = { major: v.major, minor: v.minor, patch: v.patch, stage: null, stageNum: null };
+              if (cls === "major") { out.major += 1; out.minor = 0; out.patch = 0; }
+              else if (cls === "minor") { out.minor += 1; out.patch = 0; }
+              else if (cls === "patch") { out.patch += 1; }
+              return out;
+            }
+            function computeNextVersion(baselineStr, classification, channelLabel) {
+              const baseline = parseVersion(baselineStr);
+              if (channelLabel === "stable") {
+                if (baseline.stage) {
+                  return formatVersion({ major: baseline.major, minor: baseline.minor, patch: baseline.patch, stage: null, stageNum: null });
+                }
+                return formatVersion(bumpStable(baseline, classification));
+              }
+              if (baseline.stage === channelLabel) {
+                return formatVersion({ ...baseline, stageNum: baseline.stageNum + 1 });
+              }
+              let base = { major: baseline.major, minor: baseline.minor, patch: baseline.patch };
+              if (!baseline.stage) {
+                const bumped = bumpStable(baseline, classification);
+                base = { major: bumped.major, minor: bumped.minor, patch: bumped.patch };
+              }
+              return formatVersion({ ...base, stage: channelLabel, stageNum: 1 });
+            }
+
+            const prNumber = context.payload.pull_request.number;
+
+            // Find our most recent, not-yet-minimized comment on this PR.
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+              per_page: 100,
+            });
+            const ours = comments.filter(c => c.body.includes(marker));
+            const previous = ours.length ? ours[ours.length - 1] : null;
+
+            let previousClassification = null;
+            if (previous) {
+              const m = previous.body.match(/classification=([\w-]+:[\w-]+:[\w-]+)/);
+              previousClassification = m ? m[1] : null;
+            }
+            const currentClassification = `${type}:${classification}:${channel}`;
+
+            if (classification === "none") {
+              if (previous && previousClassification !== currentClassification) {
+                // Was suggesting something (or saying "none" for a different
+                // reason/channel), now saying "none" for this reason — say so
+                // once, then stop.
+                await minimizePrevious();
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: prNumber,
+                  body: `No release needed for this PR (\`${type}\`).\n\n${marker} classification=${currentClassification} -->`,
+                });
+              }
+              // Otherwise: never suggested anything, or already said "none" — stay silent.
+              return;
+            }
+
+            if (previous && previousClassification === currentClassification) {
+              // Meaningful classification hasn't changed since the last comment.
+              return;
+            }
+
+            async function minimizePrevious() {
+              if (!previous) return;
+              // REST comment objects expose node_id directly — no separate
+              // lookup needed to get the GraphQL node id.
+              await github.graphql(
+                `mutation($id: ID!) { minimizeComment(input: { subjectId: $id, classifier: OUTDATED }) { clientMutationId } }`,
+                { id: previous.node_id }
+              );
+            }
+
+            const suggested = computeNextVersion(baselineStr, classification, channel);
+            const tag = `v${suggested}`;
+
+            await minimizePrevious();
+
+            const breakingNote = breaking ? " (breaking change)" : "";
+            const body = [
+              `### Version suggestion`,
+              ``,
+              `Based on this PR's title (\`${type}\`${breakingNote}) and the \`prerelease:${channel}\` label:`,
+              ``,
+              `| | |`,
+              `|---|---|`,
+              `| Current | \`${baselineStr}\` |`,
+              `| Suggested next tag | \`${tag}\` |`,
+              ``,
+              `This is informational only — no tag or release is created automatically yet.`,
+              ``,
+              `${marker} classification=${currentClassification} -->`,
+            ].join("\n");
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+              body,
+            });
+
+  markdownlint:
+    name: Markdown lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Run markdownlint
+        run: npx --yes markdownlint-cli "**/*.md"
 
   audit:
     name: Security audit
