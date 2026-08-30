@@ -57,6 +57,7 @@ async fn run_query_collecting(
     conn: &mut pool::BridgeConnection,
     query: &str,
 ) -> Result<Vec<QueryResult>, String> {
+    let query_timeout_seconds = conn.query_timeout_seconds();
     let client = conn.inner_mut();
     // Drain any leftover state from a prior query / dropped stream so we
     // don't hit "open batch" errors when re-using the client.
@@ -65,7 +66,7 @@ async fn run_query_collecting(
         .await
         .map_err(|error| error.to_string())?;
     client
-        .execute(query.to_string(), None, None)
+        .execute(query.to_string(), query_timeout_seconds, None)
         .await
         .map_err(|error| error.to_string())?;
 

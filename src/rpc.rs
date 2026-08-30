@@ -6,6 +6,7 @@ use serde_json::{json, Value};
 use crate::connection::resolve_connection_params;
 use crate::handlers::{blob, crud, ddl, metadata, query, routines, triggers, views};
 use crate::models::ConnectionParams;
+use crate::settings;
 
 /// Parse one JSON-RPC line and return the response value (serialised
 /// downstream by `main.rs`). Never panics — parse errors and method
@@ -25,7 +26,12 @@ pub async fn handle_line(line: &str) -> Value {
     let params = request.get("params").cloned().unwrap_or(Value::Null);
 
     match method.as_str() {
-        "initialize" => ok_response(id, Value::Null),
+        "initialize" => {
+            // Initialization is intentionally infallible: malformed known
+            // values warn and fall back, while unknown keys are ignored.
+            settings::initialize(&params);
+            ok_response(id, Value::Null)
+        }
         "ping" => query::ping(id, &params).await,
         "test_connection" => query::test_connection(id, &params).await,
 

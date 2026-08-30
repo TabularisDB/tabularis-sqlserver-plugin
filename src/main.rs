@@ -5,12 +5,12 @@
 //! are funneled through a single writer task so concurrent handlers never
 //! interleave bytes on stdout.
 
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
 
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
     sync::{mpsc, watch, Mutex},
-    time::interval,
+    time::sleep,
 };
 
 mod common;
@@ -20,14 +20,15 @@ mod handlers;
 mod models;
 mod pool_manager;
 mod rpc;
+mod settings;
 
+// This controls JSON-RPC dispatch concurrency rather than database
+// connection concurrency, which is configured separately by max_pool_size.
 const WORKER_POOL_SIZE: usize = 4;
 
 // Bounded so a burst of requests applies backpressure to the stdin reader
 // instead of buffering unboundedly in memory.
 const REQUEST_QUEUE_CAPACITY: usize = 64;
-
-const POOL_CLEANUP_INTERVAL: Duration = Duration::from_secs(600); // 10 minutes
 
 // The TDS client's async call chains produce large futures (especially in
 // debug builds). A local SQL Server 2022 execute_query probe overflowed
@@ -74,10 +75,17 @@ async fn run() {
 }
 
 async fn run_pool_cleanup(mut shutdown_rx: watch::Receiver<bool>) {
-    let mut timer = interval(POOL_CLEANUP_INTERVAL);
+    let mut settings_rx = settings::subscribe();
     loop {
+        let cleanup_interval = settings::current().pool_idle_eviction_interval();
         tokio::select! {
-            _ = timer.tick() => pool_manager::cleanup_idle_pools().await,
+            _ = sleep(cleanup_interval) => pool_manager::cleanup_idle_pools().await,
+            // Reset the timer immediately when initialize supplies an override.
+            result = settings_rx.changed() => {
+                if result.is_err() {
+                    break;
+                }
+            },
             _ = shutdown_rx.changed() => break,
         }
     }

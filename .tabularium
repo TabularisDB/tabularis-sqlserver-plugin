@@ -31,6 +31,50 @@
     "supports_ssl": true,
     "explain": true
   },
+  "settings": [
+    {
+      "key": "max_pool_size",
+      "label": "Maximum Pool Size",
+      "type": "number",
+      "default": 10,
+      "description": "Maximum number of SQL Server sessions in each connection pool."
+    },
+    {
+      "key": "connect_timeout_seconds",
+      "label": "Connection Timeout (seconds)",
+      "type": "number",
+      "default": 15,
+      "description": "Maximum time allowed to establish and authenticate a new SQL Server session."
+    },
+    {
+      "key": "query_timeout_seconds",
+      "label": "Query Timeout (seconds)",
+      "type": "number",
+      "default": 0,
+      "description": "Maximum query duration; 0 disables the query timeout."
+    },
+    {
+      "key": "application_name",
+      "label": "Application Name",
+      "type": "string",
+      "default": "Tabularis",
+      "description": "Application name reported for SQL Server sessions."
+    },
+    {
+      "key": "trust_server_certificate",
+      "label": "Trust Server Certificate",
+      "type": "boolean",
+      "default": false,
+      "description": "Accept a self-signed server certificate without validation. Use only for trusted development servers."
+    },
+    {
+      "key": "pool_idle_eviction_minutes",
+      "label": "Pool Idle Eviction (minutes)",
+      "type": "number",
+      "default": 10,
+      "description": "Interval for evicting connection pools that have no checked-out sessions."
+    }
+  ],
   "data_types": [
     {
       "name": "TINYINT",

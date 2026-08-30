@@ -11,8 +11,9 @@ The plugin already supports connection testing, schema introspection, query
 execution, CRUD, DDL, views, routines, triggers, and visual EXPLAIN. The
 remaining protocol gaps are:
 
-- `initialize` accepts the request but ignores its settings. `SS-013` will
-  validate and apply plugin settings.
+- `initialize` applies forgiving process settings for pool sizing, connection
+  and query timeouts, the TDS application name, certificate trust, and idle
+  pool eviction. Unknown keys are ignored and malformed values use defaults.
 - `save_blob_to_file` and `fetch_blob_as_data_url` support raw export and
   MIME-sniffed preview for `BINARY`, `VARBINARY` including `VARBINARY(MAX)`,
   and legacy `IMAGE` values. Composite primary keys are parameterized and
@@ -66,11 +67,9 @@ registry-grade manifest. It still needs:
 - icon, color, and screenshot assets;
 - readme, homepage, documentation, and support links;
 - `min_runtime_version` and type mappings;
-- a settings declaration for the `initialize` implementation; and
 - the plugin-owned `explain_parsers` declaration once the host supports it.
 
-`SS-013`, `SS-020`, `SS-021`, `SS-030`, `SS-034`, and `SS-035` cover these
-items.
+`SS-020`, `SS-021`, `SS-030`, `SS-034`, and `SS-035` cover these items.
 
 ## CI and release packaging
 

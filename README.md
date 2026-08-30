@@ -25,6 +25,7 @@ The client was swapped to Microsoft's protocol implementation to align the plugi
 
 - [Features](#features)
 - [Connection Configuration](#connection-configuration)
+- [Plugin Settings](#plugin-settings)
 - [Supported Data Types](#supported-data-types)
 - [Installation](#installation)
 - [Known Limitations](#known-limitations)
@@ -100,6 +101,29 @@ The standard Tabularis `ssl_mode` values map onto the TDS encryption policy:
 | `verify-ca` | Rejected — use `verify-full` |
 
 Custom CA files and client certificates are rejected explicitly; strict verification uses the system trust store.
+
+## Plugin Settings
+
+Tabularis sends these process-wide settings through `initialize` when the
+plugin starts:
+
+| Setting | Default | Effect |
+|---------|---------|--------|
+| `max_pool_size` | `10` | Maximum physical SQL Server sessions in each connection pool |
+| `connect_timeout_seconds` | `15` | Maximum time to establish and authenticate a new session |
+| `query_timeout_seconds` | `0` | Maximum query duration in seconds; `0` disables the timeout |
+| `application_name` | `Tabularis` | TDS application name visible to DBAs in SQL Server session metadata |
+| `trust_server_certificate` | `false` | Forces acceptance of a self-signed certificate without validation; use only for trusted development servers |
+| `pool_idle_eviction_minutes` | `10` | Interval for removing pools with no checked-out sessions |
+
+Malformed values produce a warning in the plugin log and fall back to the
+default; unknown settings are ignored for forward compatibility. Settings are
+snapshotted when a pool is created. Changing a setting takes effect on the next
+connection after the plugin is restarted, not on live pooled sessions.
+
+`trust_server_certificate` is an explicit escape hatch for self-signed
+certificates in a verifying TLS mode. The `prefer` and `require` modes already
+accept the server certificate as described above.
 
 ## Supported Data Types
 

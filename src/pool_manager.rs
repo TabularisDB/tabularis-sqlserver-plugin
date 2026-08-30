@@ -13,6 +13,7 @@ use tokio::sync::RwLock;
 use crate::connection::resolve_connection_params;
 use crate::driver::pool::{build_config, BridgeManager};
 use crate::models::ConnectionParams;
+use crate::settings;
 
 pub type SqlServerPool = DeadPool<BridgeManager>;
 type SqlServerPoolMap = Arc<RwLock<HashMap<String, SqlServerPool>>>;
@@ -62,9 +63,16 @@ pub async fn get_sqlserver_pool(params: &ConnectionParams) -> Result<SqlServerPo
         return Ok(pool);
     }
 
-    let manager = BridgeManager::new(build_config(&params)?, startup_script(&params));
+    // A pool snapshots process settings. The host initializes the process
+    // before opening connections, and live pools are never mutated in place.
+    let settings = settings::current();
+    let manager = BridgeManager::new(
+        build_config(&params, &settings)?,
+        startup_script(&params),
+        &settings,
+    );
     let pool = DeadPool::builder(manager)
-        .max_size(10)
+        .max_size(settings.max_pool_size)
         .build()
         .map_err(|error| error.to_string())?;
     pools.insert(key, pool.clone());
