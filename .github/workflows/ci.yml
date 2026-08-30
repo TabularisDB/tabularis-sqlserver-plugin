@@ -24,13 +24,54 @@ jobs:
         run: cargo build
 
       - name: Run tests
-        run: cargo test
+        # This crate has no library target, so --lib would fail. --bins keeps
+        # the live SQL Server test in its dedicated job below.
+        run: cargo test --bins
 
       - name: Clippy
         run: cargo clippy --all-targets -- -D warnings
 
       - name: Check formatting
         run: cargo fmt --all -- --check
+
+  live-db-integration:
+    name: Live SQL Server integration
+    runs-on: ubuntu-latest
+    # SQL Server needs more startup time and memory than PostgreSQL. GitHub's
+    # hosted runner has sufficient memory; generous health retries wait for
+    # readiness without a fixed sleep.
+    services:
+      sqlserver:
+        image: mcr.microsoft.com/mssql/server:2022-latest
+        ports:
+          - 1433:1433
+        env:
+          ACCEPT_EULA: Y
+          MSSQL_SA_PASSWORD: "Str0ng!Passw0rd"
+        options: >-
+          --health-cmd "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'Str0ng!Passw0rd' -C -Q 'SELECT 1' -b"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-start-period 20s
+          --health-retries 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build
+        run: cargo build
+
+      - name: Run live-database integration test
+        env:
+          SQLSERVER_PLUGIN_BIN: ${{ github.workspace }}/target/debug/sqlserver-plugin
+          SQLSERVER_TEST_HOST: 127.0.0.1
+          SQLSERVER_TEST_PORT: 1433
+          SQLSERVER_TEST_USER: sa
+          SQLSERVER_TEST_PASSWORD: "Str0ng!Passw0rd"
+          SQLSERVER_TEST_DATABASE: tabularis_test
+        run: cargo test --test live_db -- --test-threads=1
 
   audit:
     name: Security audit

@@ -30,9 +30,10 @@ build: build-ui
 release: build-ui
     cargo build --release
 
-# Run unit tests.
+# Run unit tests only. This crate is binary-only, so --lib would fail; --bins
+# also keeps tests/live_db.rs out of the default run.
 test:
-    cargo test
+    cargo test --bins
 
 # Launch the local REPL that simulates Tabularis JSON-RPC calls over stdio.
 repl:
