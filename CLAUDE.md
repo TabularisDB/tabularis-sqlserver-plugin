@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A [Tabularis](https://github.com/TabularisDB/tabularis) driver plugin, written in Rust, that lets Tabularis connect to Microsoft SQL Server. Tabularis launches the compiled binary as a subprocess and talks to it over stdio using JSON-RPC (one JSON object per line in, one JSON object per line out). The plugin has no server of its own and no persistent state beyond an in-process connection-pool cache.
 
-Full plugin contract (required RPC methods, manifest schema) lives in the upstream guide: `https://github.com/TabularisDB/tabularis/blob/main/plugins/PLUGIN_GUIDE.md`.
+Full plugin contract (required RPC methods, manifest schema) lives in the upstream guide: `https://github.com/TabularisDB/tabularis/blob/main/plugins/PLUGIN_GUIDE.md`. The frozen contract for plugin-owned EXPLAIN parser work is [`docs/explain-architecture.md`](docs/explain-architecture.md).
 
 ## Commands
 
@@ -51,4 +51,4 @@ Key invariants:
 - JSON emitted by handlers must deserialize into the host's model structs — `models.rs` mirrors the host's serde shapes; don't change field names or nullability casually.
 - `.tabularium` `data_types` mirrors `driver/types.rs::get_data_types()`; keep them in sync.
 - `update_record`/`delete_record` receive a `pk_map` (composite PKs supported); ordering is normalized by sorting column names.
-- Unlike built-in drivers, a plugin's `explain_query` result passes through to the frontend untouched — hence the in-process SHOWPLAN parser.
+- Pending `SS-035`, this plugin still returns an in-process parsed SHOWPLAN. After `SS-035`, it returns raw `sqlserver-showplan-xml`; the host wraps it as raw EXPLAIN output and the plugin-owned TypeScript parser registered from `explain/dist/index.iife.js` produces the visual plan. Keep the raw shape, manifest declaration, parser bundle and runtime version floor aligned with `docs/explain-architecture.md`.
