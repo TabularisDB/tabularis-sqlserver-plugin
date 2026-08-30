@@ -282,7 +282,7 @@ just release    # release build (what the GitHub Actions workflow ships)
 ### Install Locally
 
 ```bash
-just dev-install   # build + copy binary and manifest into the Tabularis plugins dir
+just dev-install   # build + copy the binary, manifest and optional bundles
 just uninstall     # remove the installed plugin
 ```
 
@@ -316,6 +316,7 @@ just repl
 ```bash
 just run-sqlserver    # SQL Server 2022 in Docker (sa / Str0ng!Passw0rd)
 just seed-sqlserver   # create and seed the tabularis_test database
+just stop-sqlserver   # stop and remove the container
 ```
 
 The live JSON-RPC integration suite uses the same container:
