@@ -5,6 +5,10 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  schedule:
+    # Weekly cargo-audit sweep for advisories disclosed after dependencies land.
+    # Use an off-peak minute rather than :00 or :30.
+    - cron: "23 5 * * 2"
 
 jobs:
   test:
@@ -27,3 +31,24 @@ jobs:
 
       - name: Check formatting
         run: cargo fmt --all -- --check
+
+  audit:
+    name: Security audit
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
+      # Scheduled audit-check runs can file or update tracking issues.
+      issues: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: rustsec/audit-check@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          # RUSTSEC-2026-0235 affects rkyv 0.7.46, present only because
+          # rust_decimal declares an optional rkyv feature. This plugin does
+          # not enable it (`cargo tree -i rkyv` has no path), so no rkyv code
+          # is compiled into the shipped binary. Re-check whenever
+          # rust_decimal is upgraded or its enabled features change.
+          ignore: RUSTSEC-2026-0235
