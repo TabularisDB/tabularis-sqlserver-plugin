@@ -117,3 +117,20 @@ A hand-written JSON-RPC request was piped as one line into
 ```
 
 The process exited after stdin closed and emitted nothing on stderr.
+
+## Closing comparison
+
+Measured on 2026-08-30 at `cb5a243`, after the review, dependency audit, and
+live-suite tasks and before the close-out documentation commit.
+
+| Measure | Opening | Closing | Difference |
+| --- | ---: | ---: | ---: |
+| Unit tests | 134 | 149 | +15 |
+| Automated live SQL Server tests | 0 | 12 | +12 |
+| Release binary | 3,023,312 bytes | 6,064,496 bytes | +3,041,184 bytes (+100.6%) |
+| Release binary (`du -h`) | 2.9 MiB | 5.8 MiB | +2.9 MiB |
+
+The closing unit count comes from `cargo test --bins`; the live count comes
+from `cargo test --test live_db -- --test-threads=1`; and the release size was
+measured after `cargo build --release` with `stat -c %s` and `du -h`. All 149
+unit tests and all 12 live tests passed.
