@@ -29,7 +29,7 @@ Run a single test: `cargo test <test_name>`.
 
 ## Architecture
 
-```
+```text
 src/
   main.rs           # tokio entrypoint: stdin reader → worker pool → stdout writer
   rpc.rs            # JSON-RPC dispatch + response/param helpers

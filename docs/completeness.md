@@ -71,9 +71,10 @@ implemented RPC surface. A unit test keeps its `data_types` list synchronized
 with `driver/types.rs`; the registry-compatible `string` and `date` categories
 replace the scaffold's unsupported `text` and `datetime` labels.
 
-The remaining manifest work is limited to screenshot and icon assets in
-`SS-021`, plus the plugin-owned `explain_parsers` declaration and corresponding
-runtime-version bump in `SS-030`, `SS-034`, and `SS-035`.
+The manifest now links the scalable SQL Server icon and the complete eight-image
+registry screenshot set. Remaining work is limited to the plugin-owned
+`explain_parsers` declaration and corresponding runtime-version bump in
+`SS-030`, `SS-034`, and `SS-035`.
 
 ## CI and release packaging
 
