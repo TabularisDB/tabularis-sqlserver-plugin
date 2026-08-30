@@ -18,14 +18,19 @@ remaining protocol gaps are:
   MIME-sniffed preview for `BINARY`, `VARBINARY` including `VARBINARY(MAX)`,
   and legacy `IMAGE` values. Composite primary keys are parameterized and
   normalized in deterministic column order.
-- The database-user and privilege surface is absent. `SS-014` will implement
-  `get_db_privilege_catalog`, `get_db_users`, `create_db_user`, `drop_db_user`,
-  `set_db_user_password`, `get_db_user_privileges`,
-  `apply_db_user_privileges`, and `get_db_user_grants`.
-- `shutdown` and the materialized-view methods return `-32601`. `SS-015` will
-  make these deliberate refusals, with tests and documentation: the host does
-  not send `shutdown`, and SQL Server has indexed views rather than
-  materialized views.
+- All eight database-user and privilege methods manage mapped SQL
+  login/database-user pairs, direct and inherited grants, and DENY-safe
+  privilege changes.
+- The host currently terminates plugin processes directly and never sends an
+  RPC `shutdown`; the courtesy method is implemented anyway and closes and
+  removes every cached pool before replying `null`.
+- The four materialized-view methods deliberately return a reasoned `-32601`.
+  SQL Server indexed views are synchronously maintained views with clustered
+  indexes, not refreshable materialized views, so mapping between them would
+  misrepresent both lifecycle and semantics.
+- A host-method coverage test snapshots every RPC sent by the host and requires
+  each one to be dispatched or included in the reasoned `NOT_IMPLEMENTED`
+  table. Unknown methods also return `-32601` naming the method and plugin.
 - `explain_query` currently returns an in-process parsed plan. `SS-035` will
   return raw `sqlserver-showplan-xml` after the plugin-owned parser contract
   and host support are available.

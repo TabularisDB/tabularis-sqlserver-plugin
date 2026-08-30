@@ -86,6 +86,24 @@ pub async fn cleanup_idle_pools() {
     pools.retain(|_, pool| pool.status().size > pool.status().available);
 }
 
+/// Close every cached pool and remove it from the process-wide registry.
+pub async fn shutdown() {
+    let pools: Vec<_> = SQLSERVER_POOLS
+        .write()
+        .await
+        .drain()
+        .map(|(_, pool)| pool)
+        .collect();
+    for pool in pools {
+        pool.close();
+    }
+}
+
+#[cfg(test)]
+pub async fn pool_count() -> usize {
+    SQLSERVER_POOLS.read().await.len()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

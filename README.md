@@ -202,6 +202,8 @@ Open **Settings → Plugins** in Tabularis and install *SQL Server* from the plu
 - SQL authentication only; Azure AD and Windows Integrated Authentication are follow-up work.
 - Primary-key membership changes are disabled: the single-column alteration API cannot safely preserve composite PKs and referencing foreign keys.
 - Custom CA files are rejected explicitly; strict verification uses the system trust store.
+- SQL Server has indexed views, not materialized views. Indexed views are maintained synchronously and have no refresh operation, so the four materialized-view RPCs deliberately return `-32601` rather than pretending the features are equivalent.
+- Unknown JSON-RPC methods return `-32601` with an error naming both the method and the SQL Server plugin.
 
 ## Building from Source
 
