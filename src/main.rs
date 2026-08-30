@@ -14,6 +14,7 @@ use tokio::{
 };
 
 mod common;
+mod connection;
 mod driver;
 mod handlers;
 mod models;

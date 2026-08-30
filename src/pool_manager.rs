@@ -10,6 +10,7 @@ use deadpool::managed::Pool as DeadPool;
 use once_cell::sync::Lazy;
 use tokio::sync::RwLock;
 
+use crate::connection::resolve_connection_params;
 use crate::driver::pool::{build_config, BridgeManager};
 use crate::models::ConnectionParams;
 
@@ -36,7 +37,7 @@ fn build_connection_key(params: &ConnectionParams) -> String {
             "{}:{}:{}:{}:{}",
             params.driver,
             params.host.as_deref().unwrap_or("localhost"),
-            params.port.unwrap_or(0),
+            params.port.unwrap_or(1433),
             params.username.as_deref().unwrap_or(""),
             params.database
         )
@@ -54,13 +55,14 @@ fn startup_script(params: &ConnectionParams) -> Option<String> {
 }
 
 pub async fn get_sqlserver_pool(params: &ConnectionParams) -> Result<SqlServerPool, String> {
-    let key = build_connection_key(params);
+    let params = resolve_connection_params(params)?;
+    let key = build_connection_key(&params);
     let mut pools = SQLSERVER_POOLS.write().await;
     if let Some(pool) = pools.get(&key).cloned() {
         return Ok(pool);
     }
 
-    let manager = BridgeManager::new(build_config(params)?, startup_script(params));
+    let manager = BridgeManager::new(build_config(&params)?, startup_script(&params));
     let pool = DeadPool::builder(manager)
         .max_size(10)
         .build()
@@ -104,5 +106,25 @@ mod tests {
         p.ssl_mode = Some("require".into());
         let key = build_connection_key(&p);
         assert_eq!(key, "sqlserver:localhost:1433:sa:master:ssl:require");
+    }
+
+    #[test]
+    fn equivalent_discrete_and_connection_string_params_share_a_key() {
+        let mut discrete = params(None);
+        discrete.ssl_mode = Some("require".into());
+        let discrete = resolve_connection_params(&discrete).unwrap();
+        let from_string = resolve_connection_params(&ConnectionParams {
+            connection_string: Some(
+                "sqlserver://sa@localhost/master?Encrypt=true&TrustServerCertificate=true".into(),
+            ),
+            password: Some(String::new()),
+            ..Default::default()
+        })
+        .unwrap();
+
+        assert_eq!(
+            build_connection_key(&discrete),
+            build_connection_key(&from_string)
+        );
     }
 }

@@ -55,7 +55,37 @@ The client was swapped to Microsoft's protocol implementation to align the plugi
 | Username | `sa` | SQL authentication only |
 | Password | — | |
 | Database | — | The database the pool connects to |
+| Connection string | — | `sqlserver://…` URL or ADO.NET/ODBC keyword syntax |
 | Startup script | — | SQL run on every new pooled connection (e.g. `SET` options) |
+
+### Connection strings
+
+The connection string accepts either URL syntax:
+
+```text
+sqlserver://sa:p%40ssword@localhost:1433/master?Encrypt=true&TrustServerCertificate=true
+```
+
+or ADO.NET/ODBC keyword syntax. Keyword names are case-insensitive, common
+aliases (`Data Source`, `Initial Catalog`, `UID`, and `PWD`) are accepted, and
+braces preserve semicolons inside values:
+
+```text
+Server=tcp:localhost,1433;Database=master;User Id=sa;Password={p;assword};Encrypt=true;TrustServerCertificate=true;
+```
+
+A connection string may be combined with discrete fields. Values explicitly
+present in the string are authoritative, while discrete fields fill only
+fields the string omits. Repeating the same value is allowed; contradictory
+values are rejected with an error that identifies the discrete and
+connection-string values instead of silently choosing one. Password values
+are redacted in contradiction errors.
+
+`Encrypt=false` maps to `ssl_mode=disable`; encrypted connections with
+`TrustServerCertificate=true` map to `require`; encrypted connections that
+verify the certificate map to `verify-full`. Custom CA and client-certificate
+keywords are rejected under the same limitations as their discrete-field
+counterparts.
 
 ### TLS modes
 

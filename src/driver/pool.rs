@@ -10,6 +10,7 @@
 //! `require` encrypts while accepting the server certificate, and `prefer`
 //! requests encrypted local-development-compatible connections.
 
+use crate::connection::{custom_ca_error, resolve_connection_params};
 use crate::models::ConnectionParams;
 use deadpool::managed::{Manager, Metrics, RecycleError, RecycleResult};
 use mssql_tiberius_bridge::{AuthMethod, Client, Config, EncryptionLevel, Error};
@@ -79,6 +80,7 @@ impl Manager for BridgeManager {
 /// SQL Server authentication is currently username/password only. TLS maps
 /// the standard `ssl_mode` values onto the bridge's encryption policy.
 pub fn build_config(params: &ConnectionParams) -> Result<Config, String> {
+    let params = resolve_connection_params(params)?;
     let mut cfg = Config::new();
     cfg.host(params.host.as_deref().unwrap_or("localhost"));
     cfg.port(params.port.unwrap_or(1433));
@@ -93,10 +95,7 @@ pub fn build_config(params: &ConnectionParams) -> Result<Config, String> {
         .as_deref()
         .is_some_and(|path| !path.is_empty())
     {
-        return Err(
-            "SQL Server custom CA files are not supported; use verify-full with the system trust store"
-                .into(),
-        );
+        return Err(custom_ca_error().into());
     }
     if params
         .ssl_cert

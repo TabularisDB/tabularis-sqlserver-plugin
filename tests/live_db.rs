@@ -57,6 +57,22 @@ fn string_literal(value: &str) -> String {
     value.replace('\'', "''")
 }
 
+fn url_encode_component(value: &str) -> String {
+    let mut encoded = String::new();
+    for byte in value.bytes() {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'~') {
+            encoded.push(char::from(byte));
+        } else {
+            encoded.push_str(&format!("%{byte:02X}"));
+        }
+    }
+    encoded
+}
+
+fn brace_connection_value(value: &str) -> String {
+    format!("{{{}}}", value.replace('}', "}}"))
+}
+
 /// A running plugin process driven through real newline-delimited JSON-RPC.
 struct Plugin {
     child: Child,
@@ -672,24 +688,35 @@ fn startup_script_runs_on_pooled_connections() {
 }
 
 #[test]
-fn connection_string_only_is_rejected_until_ss_011() {
+fn connection_string_only_connects_for_url_and_keyword_syntaxes() {
     let mut plugin = Plugin::with_scratch_database();
     let params = connection_params();
-    let connection_string = format!(
-        "sqlserver://{}:{}@{}:{}/{}",
-        params["username"].as_str().expect("username"),
-        params["password"].as_str().expect("password"),
-        params["host"].as_str().expect("host"),
-        params["port"].as_u64().expect("port"),
-        params["database"].as_str().expect("database"),
+    let username = params["username"].as_str().expect("username");
+    let password = params["password"].as_str().expect("password");
+    let host = params["host"].as_str().expect("host");
+    let port = params["port"].as_u64().expect("port");
+    let database = params["database"].as_str().expect("database");
+
+    let url = format!(
+        "sqlserver://{}:{}@{}:{}/{}?Encrypt=true&TrustServerCertificate=true",
+        url_encode_component(username),
+        url_encode_component(password),
+        host,
+        port,
+        url_encode_component(database),
+    );
+    let keyword = format!(
+        "Server=tcp:{host},{port};Database={};User Id={};Password={};Encrypt=true;TrustServerCertificate=true;",
+        brace_connection_value(database),
+        brace_connection_value(username),
+        brace_connection_value(password),
     );
 
-    // TODO(SS-011): change this to call_ok once ConnectionParams accepts and
-    // parses connection_string. Today serde ignores the field and the plugin
-    // attempts its empty/default discrete connection, which must fail.
-    let error = plugin.call_error(
-        "test_connection",
-        json!({ "params": { "connection_string": connection_string } }),
-    );
-    assert!(!error.is_empty());
+    for (syntax, connection_string) in [("URL", url), ("keyword", keyword)] {
+        let result = plugin.call_ok(
+            "test_connection",
+            json!({ "params": { "connection_string": connection_string } }),
+        );
+        assert_eq!(result, json!({ "success": true }), "{syntax} syntax");
+    }
 }
