@@ -90,6 +90,16 @@ fn build_insert_sql_plain_emits_positional_placeholders() {
 }
 
 #[test]
+fn wrap_dml_with_rowcount_keeps_multi_statement_batch_and_single_sentinel() {
+    let batch = "SET NOCOUNT ON; SELECT 1; UPDATE [dbo].[Users] SET [active] = 1";
+    let sql = wrap_dml_with_rowcount(batch);
+
+    assert!(sql.starts_with(batch));
+    assert_eq!(sql.matches(AFFECTED_ROWS_COLUMN).count(), 1);
+    assert!(sql.ends_with("SELECT CAST(@@ROWCOUNT AS BIGINT) AS [__tabularis_affected_rows];"));
+}
+
+#[test]
 fn build_insert_sql_plain_quotes_column_identifiers() {
     let sql = build_insert_sql(
         "[sales].[Orders]",
@@ -125,7 +135,11 @@ fn build_insert_sql_with_identity_wraps_in_try_catch() {
     assert_eq!(off_count, 2);
     // @@ROWCOUNT must be captured immediately after the INSERT (the later
     // SET IDENTITY_INSERT resets it) and selected at the end of the batch.
-    assert!(sql.contains("SET @tabularis_affected = @@ROWCOUNT;"));
+    assert!(sql.contains(
+        "INSERT INTO [dbo].[Users] ([id], [name]) VALUES (@P1, @P2);\n\
+         SET @tabularis_affected = @@ROWCOUNT;\n\
+         SET IDENTITY_INSERT [dbo].[Users] OFF;"
+    ));
     assert!(
         sql.contains("SELECT CAST(@tabularis_affected AS BIGINT) AS [__tabularis_affected_rows];")
     );
@@ -336,7 +350,16 @@ fn result_set_classification_ignores_literals_comments_and_identifiers() {
 fn affected_rows_are_only_reported_for_final_dml_statement() {
     assert!(query_reports_affected_rows("UPDATE users SET active = 1"));
     assert!(query_reports_affected_rows(
+        "UPDATE users SET active = 1 OUTPUT INSERTED.id"
+    ));
+    assert!(query_reports_affected_rows(
+        "SELECT 1; UPDATE users SET active = 1"
+    ));
+    assert!(query_reports_affected_rows(
         "SET NOCOUNT ON; WITH target AS (SELECT id FROM users) DELETE FROM target"
+    ));
+    assert!(!query_reports_affected_rows(
+        "UPDATE users SET active = 1; SELECT 1"
     ));
     assert!(!query_reports_affected_rows(
         "CREATE PROCEDURE dbo.p AS SELECT 1"

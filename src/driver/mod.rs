@@ -49,7 +49,9 @@ fn empty_query_result(columns: Vec<String>) -> QueryResult {
 /// `simple_query().into_results()`: the bridge derives columns from rows, so
 /// a result set with zero rows would lose its column headers. Reading the
 /// result-set metadata directly preserves them, matching the behaviour the
-/// UI expects for empty SELECTs.
+/// UI expects for empty SELECTs. This cannot be simulated faithfully without
+/// a TDS stream; SS-003 exercises zero-row headers here through simple,
+/// multi-result, batch-RPC, and paginated JSON-RPC calls.
 async fn run_query_collecting(
     conn: &mut pool::BridgeConnection,
     query: &str,
@@ -83,9 +85,17 @@ async fn run_query_collecting(
         {
             let row = Row::from_schema(schema.clone(), values);
             current.rows.push(
-                (0..row.columns().len())
-                    .map(|index| extract::extract_value(&row, index))
-                    .collect(),
+                metadata
+                    .iter()
+                    .enumerate()
+                    .map(|(index, column)| {
+                        let column_type = extract::normalized_column_type(
+                            column.data_type,
+                            column.type_info.length,
+                        );
+                        extract::extract_value_as(&row, index, column_type)
+                    })
+                    .collect::<Result<Vec<_>, _>>()?,
             );
         }
         results.push(current);
@@ -112,22 +122,25 @@ pub fn affected_rows_from_query(result: mssql_tiberius_bridge::QueryResult) -> R
         .ok_or_else(|| "SQL Server did not return affected rows for DML".to_string())
 }
 
-async fn execute_result_bearing_dml(
-    conn: &mut pool::BridgeConnection,
-    query: &str,
-) -> Result<QueryResult, String> {
-    let wrapped = helpers::wrap_dml_with_rowcount(query);
-    let mut results = run_query_collecting(conn, &wrapped).await?;
+fn affected_rows_value(value: &serde_json::Value) -> Option<u64> {
+    value
+        .as_u64()
+        .or_else(|| value.as_i64().and_then(|value| u64::try_from(value).ok()))
+        .or_else(|| value.as_str().and_then(|value| value.parse().ok()))
+}
+
+fn finish_result_bearing_dml(mut results: Vec<QueryResult>) -> Result<QueryResult, String> {
     let affected = results
         .last()
         .filter(|result| result.columns == [helpers::AFFECTED_ROWS_COLUMN])
         .and_then(|result| result.rows.first())
         .and_then(|row| row.first())
-        .and_then(serde_json::Value::as_i64)
-        .and_then(|value| u64::try_from(value).ok())
+        .and_then(affected_rows_value)
         .ok_or_else(|| {
             "SQL Server did not return affected rows for result-bearing DML".to_string()
         })?;
+    // The sentinel is an implementation detail. Removing it here guarantees
+    // OUTPUT and mixed batches never expose a stray one-cell grid to the host.
     results.pop();
 
     let mut first = if results.is_empty() {
@@ -142,6 +155,14 @@ async fn execute_result_bearing_dml(
     Ok(first)
 }
 
+async fn execute_result_bearing_dml(
+    conn: &mut pool::BridgeConnection,
+    query: &str,
+) -> Result<QueryResult, String> {
+    let wrapped = helpers::wrap_dml_with_rowcount(query);
+    finish_result_bearing_dml(run_query_collecting(conn, &wrapped).await?)
+}
+
 pub async fn execute_on_connection(
     conn: &mut pool::BridgeConnection,
     query: &str,
@@ -151,8 +172,9 @@ pub async fn execute_on_connection(
     let returns_result_set = helpers::query_returns_result_set(query);
     if helpers::query_reports_affected_rows(query) {
         // The TDS client reports rows returned, not rows affected, so every
-        // DML goes through the @@ROWCOUNT-capturing batch — result-bearing
-        // (OUTPUT clauses) or not.
+        // final DML statement goes through the @@ROWCOUNT-capturing batch —
+        // result-bearing (OUTPUT clauses) or not. SS-003 verifies plain,
+        // multi-statement, and OUTPUT cases against SQL Server.
         let mut result = execute_result_bearing_dml(conn, query).await?;
         if !returns_result_set {
             result.columns = Vec::new();
@@ -198,4 +220,78 @@ pub async fn execute_on_connection(
         first.additional_results = Some(results);
     }
     Ok(first)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn result(columns: &[&str], rows: Vec<Vec<serde_json::Value>>) -> QueryResult {
+        QueryResult {
+            columns: columns.iter().map(|column| (*column).to_string()).collect(),
+            rows,
+            ..empty_query_result(Vec::new())
+        }
+    }
+
+    #[test]
+    fn dml_sentinel_is_removed_from_output_result() {
+        let output = result(&["id"], vec![vec![json!(7)]]);
+        let sentinel = result(&[helpers::AFFECTED_ROWS_COLUMN], vec![vec![json!(1)]]);
+
+        let actual = finish_result_bearing_dml(vec![output, sentinel]).unwrap();
+
+        assert_eq!(actual.columns, ["id"]);
+        assert_eq!(actual.rows, vec![vec![json!(7)]]);
+        assert_eq!(actual.affected_rows, 1);
+        assert!(actual.additional_results.is_none());
+    }
+
+    #[test]
+    fn dml_sentinel_preserves_additional_result_sets() {
+        let first = result(&["before"], vec![vec![json!("first")]]);
+        let output = result(&["id"], vec![vec![json!(9)]]);
+        let sentinel = result(&[helpers::AFFECTED_ROWS_COLUMN], vec![vec![json!(3)]]);
+
+        let actual = finish_result_bearing_dml(vec![first, output, sentinel]).unwrap();
+
+        assert_eq!(actual.affected_rows, 3);
+        let additional = actual.additional_results.unwrap();
+        assert_eq!(additional.len(), 1);
+        assert_eq!(additional[0].columns, ["id"]);
+        assert_eq!(additional[0].rows, vec![vec![json!(9)]]);
+    }
+
+    #[test]
+    fn dml_without_output_returns_only_affected_count() {
+        let sentinel = result(&[helpers::AFFECTED_ROWS_COLUMN], vec![vec![json!(2)]]);
+
+        let actual = finish_result_bearing_dml(vec![sentinel]).unwrap();
+
+        assert!(actual.columns.is_empty());
+        assert!(actual.rows.is_empty());
+        assert_eq!(actual.affected_rows, 2);
+        assert!(actual.additional_results.is_none());
+    }
+
+    #[test]
+    fn dml_affected_count_accepts_js_unsafe_integer_string() {
+        let sentinel = result(
+            &[helpers::AFFECTED_ROWS_COLUMN],
+            vec![vec![json!("9007199254740992")]],
+        );
+
+        let actual = finish_result_bearing_dml(vec![sentinel]).unwrap();
+
+        assert_eq!(actual.affected_rows, 9_007_199_254_740_992);
+    }
+
+    #[test]
+    fn dml_requires_a_well_formed_trailing_sentinel() {
+        let output = result(&["id"], vec![vec![json!(7)]]);
+        let error = finish_result_bearing_dml(vec![output]).unwrap_err();
+
+        assert!(error.contains("did not return affected rows"));
+    }
 }

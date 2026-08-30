@@ -126,7 +126,9 @@ pub fn build_insert_sql(
             // so the CATCH block must explicitly turn it OFF before re-raising.
             // Setting OFF on a table that is already OFF is a no-op in SQL
             // Server, so this is safe even if the failure occurs before the ON
-            // statement executes. No explicit transaction is needed — a single
+            // statement executes. The success and CATCH paths both turn it
+            // OFF; SS-003 verifies a failed insert does not poison the reused
+            // pooled session. No explicit transaction is needed — a single
             // INSERT is atomic on its own, and the TDS client rejects
             // BEGIN TRAN / COMMIT inside an `sp_executesql` RPC batch
             // (error 3981).

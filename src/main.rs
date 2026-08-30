@@ -29,8 +29,11 @@ const REQUEST_QUEUE_CAPACITY: usize = 64;
 const POOL_CLEANUP_INTERVAL: Duration = Duration::from_secs(600); // 10 minutes
 
 // The TDS client's async call chains produce large futures (especially in
-// debug builds); tokio's default 2 MiB worker stack overflows while polling
-// them, so give workers a wider stack.
+// debug builds). A local SQL Server 2022 execute_query probe overflowed
+// tokio's default 2 MiB stack while 4 MiB completed; 16 MiB is therefore a
+// deliberate 4x safety margin, not a measured minimum. Keep the margin until
+// the preview client flattens those polling chains or equivalent CI stress
+// coverage proves a smaller stack across platforms.
 const WORKER_STACK_SIZE: usize = 16 * 1024 * 1024;
 
 fn main() {
@@ -115,8 +118,9 @@ async fn run_worker(
         };
         let Some(line) = line else { break };
 
-        // Boxed: the dispatch future embeds every handler's state machine,
-        // so keep it on the heap rather than the worker stack.
+        // Box the dispatch future itself: it embeds every handler's state
+        // machine, so constructing only a boxed handler result later would
+        // still leave the large dispatch enum on the worker stack.
         let response = Box::pin(rpc::handle_line(&line)).await;
         let body = match serde_json::to_string(&response) {
             Ok(s) => s,

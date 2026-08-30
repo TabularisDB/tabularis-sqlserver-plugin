@@ -38,15 +38,15 @@ pub async fn explain_showplan_xml(
 
     let result_sets = query_result?;
     disable_result?;
-    result_sets
-        .iter()
-        .flat_map(|rows| rows.iter())
-        .flat_map(|row| (0..row.columns().len()).map(move |index| extract_value(row, index)))
-        .find_map(|value| {
-            value
-                .as_str()
-                .filter(|text| text.contains("ShowPlanXML"))
-                .map(str::to_string)
-        })
-        .ok_or_else(|| "SQL Server did not return a SHOWPLAN_XML document".to_string())
+    for rows in &result_sets {
+        for row in rows {
+            for index in 0..row.columns().len() {
+                let value = extract_value(row, index)?;
+                if let Some(xml) = value.as_str().filter(|text| text.contains("ShowPlanXML")) {
+                    return Ok(xml.to_string());
+                }
+            }
+        }
+    }
+    Err("SQL Server did not return a SHOWPLAN_XML document".to_string())
 }
