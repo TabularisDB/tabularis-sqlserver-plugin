@@ -245,7 +245,7 @@ pub struct ColumnDefinition {
     pub default_value: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct DataTypeInfo {
     pub name: String,
     pub category: String,

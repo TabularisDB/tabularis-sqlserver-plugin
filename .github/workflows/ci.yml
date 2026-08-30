@@ -34,6 +34,15 @@ jobs:
       - name: Check formatting
         run: cargo fmt --all -- --check
 
+  validate-manifest:
+    name: Validate .tabularium manifest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Validate against the live registry schema
+        run: npx --yes @tabularium/cli validate .tabularium --registry https://registry.tabularis.dev --kind driver
+
   live-db-integration:
     name: Live SQL Server integration
     runs-on: ubuntu-latest

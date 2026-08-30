@@ -131,6 +131,10 @@ accept the server certificate as described above.
 
 All common SQL Server types are supported for column creation and value extraction, including exact/approximate numerics (`TINYINT` … `BIGINT`, `DECIMAL`, `MONEY`, `FLOAT`), strings (`CHAR`/`VARCHAR`/`NVARCHAR` incl. `MAX`, `TEXT`/`NTEXT`), binary (`BINARY`/`VARBINARY`/`IMAGE`), date/time (`DATE`, `TIME`, `DATETIME`, `DATETIME2`, `SMALLDATETIME`, `DATETIMEOFFSET`), `BIT`, `UNIQUEIDENTIFIER`, `XML`, `SQL_VARIANT`, `ROWVERSION`, `HIERARCHYID`, and spatial (`GEOGRAPHY`, `GEOMETRY`).
 
+Generic DDL types emitted by Tabularis map to SQL Server-native spellings. In
+particular, generic `TIMESTAMP` maps to `DATETIME2`; SQL Server's own
+`TIMESTAMP` type remains a deprecated `ROWVERSION` synonym, not a date/time.
+
 `BIGINT` values outside JavaScript's safe integer range are delivered as strings so they round-trip without precision loss.
 
 ### Binary export and preview

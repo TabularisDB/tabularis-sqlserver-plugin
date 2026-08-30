@@ -64,24 +64,23 @@ are outside the completion scope.
 
 ## Manifest and settings
 
-The current `.tabularium` file is a scaffold manifest rather than a
-registry-grade manifest. It still needs:
+The `.tabularium` file validates against the live registry driver schema. It
+now carries the registry metadata and links, SQL Server branding, runtime
+floor, generic-to-native type mappings, and capabilities verified against the
+implemented RPC surface. A unit test keeps its `data_types` list synchronized
+with `driver/types.rs`; the registry-compatible `string` and `date` categories
+replace the scaffold's unsupported `text` and `datetime` labels.
 
-- the registry schema URL and the `kind`, `engine`, `paradigms`, `category`,
-  `tags`, and `license` metadata;
-- icon, color, and screenshot assets;
-- readme, homepage, documentation, and support links;
-- `min_runtime_version` and type mappings;
-- the plugin-owned `explain_parsers` declaration once the host supports it.
-
-`SS-020`, `SS-021`, `SS-030`, `SS-034`, and `SS-035` cover these items.
+The remaining manifest work is limited to screenshot and icon assets in
+`SS-021`, plus the plugin-owned `explain_parsers` declaration and corresponding
+runtime-version bump in `SS-030`, `SS-034`, and `SS-035`.
 
 ## CI and release packaging
 
-The Rust build, test, Clippy, formatting, live SQL Server integration, and
-scheduled security-audit checks exist. Release readiness still requires:
+The Rust build, test, Clippy, formatting, live SQL Server integration,
+registry manifest validation, and scheduled security-audit checks exist.
+Release readiness still requires:
 
-- registry manifest validation;
 - Conventional Commit pull-request title checks;
 - version-suggestion and Markdown lint jobs;
 - Dependabot configuration;

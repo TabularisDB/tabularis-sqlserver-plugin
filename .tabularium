@@ -1,9 +1,24 @@
 {
-  "$schema": "https://tabularis.dev/schemas/plugin-manifest.json",
-  "id": "sqlserver",
-  "name": "SQL Server",
+  "$schema": "https://registry.tabularis.dev/manifest.schema.json?kind=driver",
+  "name": "sqlserver",
   "version": "0.1.0",
-  "description": "Microsoft SQL Server driver for Tabularis",
+  "description": "Full-featured Microsoft SQL Server driver for Tabularis with schema browsing, query execution, visual plans, type-aware row editing, DDL, routines, triggers, BLOBs, and database-user management.",
+  "category": "database",
+  "tags": ["driver", "sqlserver", "mssql", "sql", "relational", "database-driver"],
+  "license": "Apache-2.0",
+  "icon": "https://raw.githubusercontent.com/TabularisDB/tabularis-sqlserver-plugin/main/sqlserver-icon.svg",
+  "color": "#CC2927",
+  "screenshots": [],
+  "readme": "README.md",
+  "homepage": "https://github.com/TabularisDB/tabularis-sqlserver-plugin",
+  "documentation_url": "https://github.com/TabularisDB/tabularis-sqlserver-plugin#readme",
+  "min_runtime_version": "0.20.0",
+  "support": {
+    "issues_url": "https://github.com/TabularisDB/tabularis-sqlserver-plugin/issues"
+  },
+  "kind": "driver",
+  "engine": "sqlserver",
+  "paradigms": ["relational"],
   "default_port": 1433,
   "default_username": "sa",
   "executable": "sqlserver-plugin",
@@ -31,6 +46,15 @@
     "readonly": false,
     "supports_ssl": true,
     "explain": true
+  },
+  "type_mappings": {
+    "TIMESTAMP": "DATETIME2",
+    "BOOLEAN": "BIT",
+    "TEXT": "NVARCHAR(MAX)",
+    "BLOB": "VARBINARY(MAX)",
+    "SERIAL": "INT IDENTITY(1,1)",
+    "UUID": "UNIQUEIDENTIFIER",
+    "JSON": "NVARCHAR(MAX)"
   },
   "settings": [
     {
@@ -145,53 +169,53 @@
     },
     {
       "name": "CHAR",
-      "category": "text",
+      "category": "string",
       "requires_length": true,
       "requires_precision": false,
       "default_length": "1"
     },
     {
       "name": "VARCHAR",
-      "category": "text",
+      "category": "string",
       "requires_length": true,
       "requires_precision": false,
       "default_length": "255"
     },
     {
       "name": "VARCHAR(MAX)",
-      "category": "text",
+      "category": "string",
       "requires_length": false,
       "requires_precision": false
     },
     {
       "name": "TEXT",
-      "category": "text",
+      "category": "string",
       "requires_length": false,
       "requires_precision": false
     },
     {
       "name": "NCHAR",
-      "category": "text",
+      "category": "string",
       "requires_length": true,
       "requires_precision": false,
       "default_length": "1"
     },
     {
       "name": "NVARCHAR",
-      "category": "text",
+      "category": "string",
       "requires_length": true,
       "requires_precision": false,
       "default_length": "255"
     },
     {
       "name": "NVARCHAR(MAX)",
-      "category": "text",
+      "category": "string",
       "requires_length": false,
       "requires_precision": false
     },
     {
       "name": "NTEXT",
-      "category": "text",
+      "category": "string",
       "requires_length": false,
       "requires_precision": false
     },
@@ -223,37 +247,37 @@
     },
     {
       "name": "DATE",
-      "category": "datetime",
+      "category": "date",
       "requires_length": false,
       "requires_precision": false
     },
     {
       "name": "TIME",
-      "category": "datetime",
+      "category": "date",
       "requires_length": false,
       "requires_precision": false
     },
     {
       "name": "DATETIME",
-      "category": "datetime",
+      "category": "date",
       "requires_length": false,
       "requires_precision": false
     },
     {
       "name": "DATETIME2",
-      "category": "datetime",
+      "category": "date",
       "requires_length": false,
       "requires_precision": false
     },
     {
       "name": "SMALLDATETIME",
-      "category": "datetime",
+      "category": "date",
       "requires_length": false,
       "requires_precision": false
     },
     {
       "name": "DATETIMEOFFSET",
-      "category": "datetime",
+      "category": "date",
       "requires_length": false,
       "requires_precision": false
     },
