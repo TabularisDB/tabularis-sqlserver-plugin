@@ -1,7 +1,7 @@
 {
   "$schema": "https://registry.tabularis.dev/manifest.schema.json?kind=driver",
   "name": "sqlserver",
-  "version": "0.1.0",
+  "version": "1.0.0-beta.1",
   "description": "Full-featured Microsoft SQL Server driver for Tabularis with schema browsing, query execution, visual plans, type-aware row editing, DDL, routines, triggers, BLOBs, and database-user management.",
   "category": "database",
   "tags": ["driver", "sqlserver", "mssql", "sql", "relational", "database-driver"],

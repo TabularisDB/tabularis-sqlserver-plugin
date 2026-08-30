@@ -7,18 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-beta.1] - 2026-08-30
+
 ### Changed
 
-- Replaced the `tiberius` TDS client with Microsoft's `mssql-tds` implementation through `mssql-tiberius-bridge`, preserving the plugin's user-facing connection and query behaviour
+- Replaced the `tiberius` TDS client with Microsoft's `mssql-tds`
+  implementation through `mssql-tiberius-bridge`, preserving result-set
+  metadata, affected-row reporting, session recovery, pagination, and static
+  and runtime execution-plan capture.
+- Adopted the `1.0.0-beta.N` prerelease line for the completed driver instead
+  of retaining the scaffold's `0.1.0` version. Pull-request
+  `prerelease:alpha`, `prerelease:beta`, `prerelease:rc`, and
+  `prerelease:stable` labels drive version suggestions.
 
 ### Added
 
-- Automated live SQL Server 2022 JSON-RPC integration tests for TLS, DDL, CRUD, result-set metadata, affected rows, identity recovery, pagination, error recovery, execution plans, and startup scripts
-- Initial SQL Server driver with `deadpool` pooling, TLS modes, session reset, and startup scripts
-- Schema, table, column, PK/FK, index, view, routine, and trigger introspection
-- Query execution with pagination, CTE/DML classification, multiple result sets, and accurate affected rows (incl. DML `OUTPUT`)
-- INSERT/UPDATE/DELETE with composite primary keys and safe `IDENTITY_INSERT` recovery
-- Table/view/index/foreign-key DDL and safe `ALTER COLUMN` generation
-- Procedure/function management, typed `OUT`/`INOUT` variables, and table-valued functions
-- Static and runtime execution plans through `SHOWPLAN_XML` / `STATISTICS XML`, parsed into the visual-plan model
-- JavaScript-safe `BIGINT` extraction and broad SQL Server type handling
+- URL and ADO.NET/ODBC connection strings with deterministic reconciliation
+  against discrete connection fields and normalized pool keys.
+- Raw BLOB export and bounded MIME-sniffed previews for SQL Server binary
+  types, including composite-primary-key lookup and oversized-value guards.
+- Manifest-backed initialization settings for pool sizing, connection and
+  query timeouts, TDS application identity, certificate trust, and idle pool
+  eviction.
+- SQL-authenticated login and database-user lifecycle management, privilege
+  catalogs, direct and inherited grant reporting, and transactional
+  privilege changes.
+- Registry-grade manifest metadata, SQL Server branding and screenshots,
+  native type mappings, synchronized data-type declarations, and release
+  archives for five desktop platforms.
+- CI checks for formatting, Clippy, unit and live SQL Server 2022 tests,
+  manifest and Markdown validation, Conventional Commit pull-request titles,
+  version suggestions, dependency updates, RustSec advisories, and release
+  tag/version agreement.
+- Schema and object introspection, query and batch execution, CRUD, DDL,
+  views, routines, triggers, visual execution plans, JavaScript-safe integer
+  extraction, and broad SQL Server type handling.
+
+[Unreleased]: https://github.com/TabularisDB/tabularis-sqlserver-plugin/compare/v1.0.0-beta.1...HEAD
+[1.0.0-beta.1]: https://github.com/TabularisDB/tabularis-sqlserver-plugin/releases/tag/v1.0.0-beta.1

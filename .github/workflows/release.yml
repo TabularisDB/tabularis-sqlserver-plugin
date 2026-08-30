@@ -183,6 +183,15 @@ jobs:
           path: artifacts
           merge-multiple: true
 
+      - name: Detect prerelease from tag
+        id: meta
+        run: |
+          if [[ "${{ github.ref_name }}" == *-* ]]; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
@@ -191,3 +200,5 @@ jobs:
           files: |
             artifacts/*.zip
             .tabularium
+          prerelease: ${{ steps.meta.outputs.prerelease == 'true' }}
+          make_latest: ${{ steps.meta.outputs.prerelease == 'false' }}
