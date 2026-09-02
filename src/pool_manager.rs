@@ -96,7 +96,17 @@ pub async fn remove_sqlserver_pool(params: &ConnectionParams) {
 /// periodically so long-idle sessions don't linger for the plugin's lifetime.
 pub async fn cleanup_idle_pools() {
     let mut pools = SQLSERVER_POOLS.write().await;
-    pools.retain(|_, pool| pool.status().size > pool.status().available);
+    pools.retain(|_, pool| {
+        let status = pool.status();
+        let has_checked_out_connection = status.size > status.available;
+        if !has_checked_out_connection {
+            // Explicit close makes the server-side sessions disappear now;
+            // removing the last registry handle alone would rely on drop
+            // timing inside deadpool.
+            pool.close();
+        }
+        has_checked_out_connection
+    });
 }
 
 /// Close every cached pool and remove it from the process-wide registry.
@@ -145,6 +155,23 @@ mod tests {
         p.ssl_mode = Some("require".into());
         let key = build_connection_key(&p);
         assert_eq!(key, "sqlserver:localhost:1433:sa:master:ssl:require");
+    }
+
+    #[test]
+    fn database_is_part_of_the_key_and_identical_params_are_stable() {
+        let master = params(Some("ss045-key"));
+        let identical = master.clone();
+        let mut other_database = master.clone();
+        other_database.database = crate::models::DatabaseSelection::Single("tempdb".into());
+
+        assert_eq!(
+            build_connection_key(&master),
+            build_connection_key(&identical)
+        );
+        assert_ne!(
+            build_connection_key(&master),
+            build_connection_key(&other_database)
+        );
     }
 
     #[test]

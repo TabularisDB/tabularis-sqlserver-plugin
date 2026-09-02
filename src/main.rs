@@ -26,16 +26,19 @@ mod settings;
 // connection concurrency, which is configured separately by max_pool_size.
 const WORKER_POOL_SIZE: usize = 4;
 
-// Bounded so a burst of requests applies backpressure to the stdin reader
-// instead of buffering unboundedly in memory.
+// Both sides are bounded so backpressure reaches stdin even when the host is
+// slow to consume responses. With four in-flight handlers this caps a burst at
+// 134 queued or active payloads instead of moving it into an unbounded output
+// queue (64 requests + 64 responses + 4 workers + reader + writer).
 const REQUEST_QUEUE_CAPACITY: usize = 64;
+const RESPONSE_QUEUE_CAPACITY: usize = 64;
 
 // The TDS client's async call chains produce large futures (especially in
-// debug builds). A local SQL Server 2022 execute_query probe overflowed
-// tokio's default 2 MiB stack while 4 MiB completed; 16 MiB is therefore a
-// deliberate 4x safety margin, not a measured minimum. Keep the margin until
-// the preview client flattens those polling chains or equivalent CI stress
-// coverage proves a smaller stack across platforms.
+// debug builds). A local SQL Server 2022 debug execute_query probe overflowed
+// tokio's default 2 MiB stack while 4 MiB completed. The full release live
+// suite also passed at 4 MiB in SS-045, but that does not remove the debug or
+// cross-platform risk. Keep 16 MiB as a deliberate 4x margin until the preview
+// client flattens those polling chains or CI stress proves less everywhere.
 const WORKER_STACK_SIZE: usize = 16 * 1024 * 1024;
 
 fn main() {
@@ -55,7 +58,7 @@ async fn run() {
     let (req_tx, req_rx) = mpsc::channel::<String>(REQUEST_QUEUE_CAPACITY);
     let req_rx = Arc::new(Mutex::new(req_rx));
 
-    let (resp_tx, resp_rx) = mpsc::unbounded_channel::<String>();
+    let (resp_tx, resp_rx) = mpsc::channel::<String>(RESPONSE_QUEUE_CAPACITY);
     let writer_handle = tokio::spawn(run_writer(resp_rx));
 
     let worker_handles: Vec<_> = (0..WORKER_POOL_SIZE)
@@ -116,10 +119,7 @@ async fn run_reader(req_tx: mpsc::Sender<String>) {
     }
 }
 
-async fn run_worker(
-    req_rx: Arc<Mutex<mpsc::Receiver<String>>>,
-    resp_tx: mpsc::UnboundedSender<String>,
-) {
+async fn run_worker(req_rx: Arc<Mutex<mpsc::Receiver<String>>>, resp_tx: mpsc::Sender<String>) {
     loop {
         let line = {
             let mut rx = req_rx.lock().await;
@@ -138,13 +138,13 @@ async fn run_worker(
             ),
         };
 
-        if resp_tx.send(body).is_err() {
+        if resp_tx.send(body).await.is_err() {
             break;
         }
     }
 }
 
-async fn run_writer(mut resp_rx: mpsc::UnboundedReceiver<String>) {
+async fn run_writer(mut resp_rx: mpsc::Receiver<String>) {
     let mut stdout = tokio::io::stdout();
     while let Some(mut body) = resp_rx.recv().await {
         body.push('\n');

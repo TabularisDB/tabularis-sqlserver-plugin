@@ -1315,6 +1315,63 @@ fn pagination_and_batch_semantics_cover_ordered_unordered_cte_and_dml() {
 }
 
 #[test]
+fn million_row_query_is_bounded_and_marks_truncation() {
+    let mut plugin = Plugin::with_scratch_database();
+    let result = plugin.execute(
+        "SELECT TOP (1000000) \
+         CAST(ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) AS INT) AS row_number \
+         FROM sys.all_objects AS left_source \
+         CROSS JOIN sys.all_objects AS right_source",
+    );
+
+    assert_eq!(result_rows(&result).len(), 10_000);
+    assert_eq!(result["truncated"], true);
+    assert_eq!(result["pagination"], Value::Null);
+
+    // Cancelling the remainder of the TDS stream must leave the pooled
+    // connection immediately reusable.
+    let recovered = plugin.execute("SELECT CAST(1 AS INT) AS connection_ok");
+    assert_eq!(recovered["rows"], json!([[1]]));
+}
+
+#[test]
+fn request_burst_is_bounded_and_slow_query_does_not_block_ping() {
+    let mut plugin = Plugin::with_scratch_database();
+    let params = connection_params();
+    let started = std::time::Instant::now();
+    let slow_id = plugin.send(
+        "execute_query",
+        json!({
+            "params": params,
+            "query": "WAITFOR DELAY '00:00:02'; SELECT CAST(1 AS INT) AS finished"
+        }),
+    );
+    let ping_ids: BTreeSet<u64> = (0..200)
+        .map(|_| plugin.send("ping", json!({ "params": params })))
+        .collect();
+
+    let first = plugin.read_response();
+    let first_id = first["id"].as_u64().expect("response id");
+    assert!(ping_ids.contains(&first_id), "a ping must finish first");
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(2),
+        "the slow query blocked all JSON-RPC workers"
+    );
+
+    let mut seen = BTreeSet::from([first_id]);
+    for _ in 0..200 {
+        let response = plugin.read_response();
+        assert!(
+            response.get("error").is_none(),
+            "burst response: {response}"
+        );
+        seen.insert(response["id"].as_u64().expect("response id"));
+    }
+    assert!(seen.contains(&slow_id));
+    assert!(ping_ids.iter().all(|id| seen.contains(id)));
+}
+
+#[test]
 fn syntax_and_constraint_errors_keep_server_details_and_pool_recovery() {
     let mut plugin = Plugin::with_scratch_database();
     plugin.reset_table(
@@ -1964,6 +2021,47 @@ fn connection_string_only_connects_for_url_and_keyword_syntaxes() {
         );
         assert_eq!(result, json!({ "success": true }), "{syntax} syntax");
     }
+}
+
+#[test]
+fn pool_keys_reuse_identical_and_equivalent_forms_but_separate_databases() {
+    let mut plugin = Plugin::with_scratch_database();
+
+    let identical = connection_params_for(&test_database(), "ss045-identical");
+    let first = plugin.execute_with(&identical, "SELECT @@SPID AS session_id");
+    let second = plugin.execute_with(&identical, "SELECT @@SPID AS session_id");
+    assert_eq!(first["rows"][0][0], second["rows"][0][0]);
+
+    let master = connection_params_for("master", "ss045-database-key");
+    let selected = connection_params_for(&test_database(), "ss045-database-key");
+    let master_session = plugin.execute_with(&master, "SELECT @@SPID AS session_id");
+    let selected_session = plugin.execute_with(&selected, "SELECT @@SPID AS session_id");
+    assert_ne!(master_session["rows"][0][0], selected_session["rows"][0][0]);
+
+    let mut discrete = connection_params();
+    discrete
+        .as_object_mut()
+        .expect("connection params object")
+        .remove("connection_id");
+    let username = discrete["username"].as_str().expect("username");
+    let password = discrete["password"].as_str().expect("password");
+    let host = discrete["host"].as_str().expect("host");
+    let port = discrete["port"].as_u64().expect("port");
+    let database = discrete["database"].as_str().expect("database");
+    let connection_string = format!(
+        "sqlserver://{}:{}@{}:{}/{}?Encrypt=true&TrustServerCertificate=true",
+        url_encode_component(username),
+        url_encode_component(password),
+        host,
+        port,
+        url_encode_component(database),
+    );
+    let from_discrete = plugin.execute_with(&discrete, "SELECT @@SPID AS session_id");
+    let from_string = plugin.execute_with(
+        &json!({ "connection_string": connection_string }),
+        "SELECT @@SPID AS session_id",
+    );
+    assert_eq!(from_discrete["rows"][0][0], from_string["rows"][0][0]);
 }
 
 #[test]

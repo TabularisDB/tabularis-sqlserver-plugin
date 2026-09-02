@@ -161,9 +161,13 @@ multi-statement SQL run without pagination metadata. `execute_query` and every
 statement in `execute_query_batch` use this same classification and execution
 path.
 
-For a paginated query the plugin requests `page_size + 1` rows. It returns at
-most `page_size`, sets `has_more` when the lookahead row exists, and sets
-`truncated` to the same value because that lookahead row was omitted.
+For a paginated query the plugin requests `page_size + 1` rows. It normally
+returns at most `page_size`, sets `has_more` when the lookahead row exists, and
+sets `truncated` to the same value because that lookahead row was omitted. A
+statement-wide safety ceiling retains at most 10,000 rows across all result
+sets, even when `limit` is absent or larger; crossing it also sets `truncated`
+and, for paginated queries, `has_more`. This bounds the plugin's single-line
+JSON response instead of buffering arbitrary row counts in process memory.
 `pagination.total_rows` remains `null`: normal page fetches never run a hidden
 count query. The Tabularis **Count rows** action obtains a total separately by
 running a `SELECT COUNT(*)` wrapper with pagination disabled. That count can
