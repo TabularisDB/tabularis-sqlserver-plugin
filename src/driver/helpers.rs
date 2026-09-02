@@ -82,16 +82,14 @@ pub fn wrap_dml_with_rowcount(sql: &str) -> String {
 
 /// Build a parameterized SQL Server `INSERT` statement.
 ///
-/// `qualified` is expected to already be a `[schema].[table]` produced by
-/// [`qualify`]. `columns` is the in-order list of column names that will be
-/// bound to `@P1, @P2, ...` (callers must bind values in the same order).
+/// `schema`, `table`, and every entry in `columns` are identifiers and are
+/// bracket-quoted here. Values are bound to `@P1, @P2, ...` by the caller in
+/// the same order; this helper never accepts a pre-rendered table reference.
 ///
-/// When `wrap_identity_insert` is `Some(target)`, the resulting batch toggles
-/// `SET IDENTITY_INSERT <target> ON` around the insert and is wrapped in
-/// `BEGIN TRY / BEGIN CATCH` so the session-scoped setting is always cleared,
-/// even if the insert fails. `target` should also be a `[schema].[table]`
-/// reference (typically the same as `qualified`); accepting it as a parameter
-/// keeps the helper pure and easy to unit-test.
+/// When `wrap_identity_insert` is true, the resulting batch toggles
+/// `SET IDENTITY_INSERT` around the insert and is wrapped in `BEGIN TRY /
+/// BEGIN CATCH` so the session-scoped setting is always cleared, even if the
+/// insert fails.
 ///
 /// The batch always ends by selecting the insert's `@@ROWCOUNT` as
 /// [`AFFECTED_ROWS_COLUMN`]. In the identity-wrapped variant the count is
@@ -101,10 +99,12 @@ pub fn wrap_dml_with_rowcount(sql: &str) -> String {
 /// Returns the SQL batch. The number of placeholders always matches
 /// `columns.len()`.
 pub fn build_insert_sql(
-    qualified: &str,
+    schema: Option<&str>,
+    table: &str,
     columns: &[String],
-    wrap_identity_insert: Option<&str>,
+    wrap_identity_insert: bool,
 ) -> String {
+    let target = qualify(schema, table);
     let col_list = columns
         .iter()
         .map(|c| bracket_quote(c))
@@ -116,40 +116,37 @@ pub fn build_insert_sql(
         .join(", ");
     let insert = format!(
         "INSERT INTO {} ({}) VALUES ({})",
-        qualified, col_list, placeholders
+        target, col_list, placeholders
     );
 
-    match wrap_identity_insert {
-        None => format!("{};\n{}", insert, select_affected_rows("@@ROWCOUNT")),
-        Some(target) => {
-            // SET IDENTITY_INSERT is session-scoped and is *not* transactional,
-            // so the CATCH block must explicitly turn it OFF before re-raising.
-            // Setting OFF on a table that is already OFF is a no-op in SQL
-            // Server, so this is safe even if the failure occurs before the ON
-            // statement executes. The success and CATCH paths both turn it
-            // OFF; SS-003 verifies a failed insert does not poison the reused
-            // pooled session. No explicit transaction is needed — a single
-            // INSERT is atomic on its own, and the TDS client rejects
-            // BEGIN TRAN / COMMIT inside an `sp_executesql` RPC batch
-            // (error 3981).
-            format!(
-                "DECLARE @tabularis_affected BIGINT = 0;\n\
-                 BEGIN TRY\n\
-                     SET IDENTITY_INSERT {target} ON;\n\
-                     {insert};\n\
-                     SET @tabularis_affected = @@ROWCOUNT;\n\
-                     SET IDENTITY_INSERT {target} OFF;\n\
-                 END TRY\n\
-                 BEGIN CATCH\n\
-                     SET IDENTITY_INSERT {target} OFF;\n\
-                     THROW;\n\
-                 END CATCH;\n\
-                 {select}",
-                target = target,
-                insert = insert,
-                select = select_affected_rows("@tabularis_affected"),
-            )
-        }
+    if wrap_identity_insert {
+        // SET IDENTITY_INSERT is session-scoped and is *not* transactional,
+        // so the CATCH block must explicitly turn it OFF before re-raising.
+        // Setting OFF on a table that is already OFF is a no-op in SQL
+        // Server, so this is safe even if the failure occurs before the ON
+        // statement executes. The success and CATCH paths both turn it
+        // OFF; SS-003 verifies a failed insert does not poison the reused
+        // pooled session. No explicit transaction is needed — a single
+        // INSERT is atomic on its own, and the TDS client rejects
+        // BEGIN TRAN / COMMIT inside an `sp_executesql` RPC batch
+        // (error 3981).
+        format!(
+            "DECLARE @tabularis_affected BIGINT = 0;\n\
+             BEGIN TRY\n\
+                 SET IDENTITY_INSERT {target} ON;\n\
+                 {insert};\n\
+                 SET @tabularis_affected = @@ROWCOUNT;\n\
+                 SET IDENTITY_INSERT {target} OFF;\n\
+             END TRY\n\
+             BEGIN CATCH\n\
+                 SET IDENTITY_INSERT {target} OFF;\n\
+                 THROW;\n\
+             END CATCH;\n\
+             {select}",
+            select = select_affected_rows("@tabularis_affected"),
+        )
+    } else {
+        format!("{};\n{}", insert, select_affected_rows("@@ROWCOUNT"))
     }
 }
 

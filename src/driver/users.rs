@@ -282,6 +282,38 @@ fn password_literal(password: &str) -> String {
     format!("N'{}'", password.replace('\'', "''"))
 }
 
+pub(crate) fn build_create_login_sql(login: &str, password: &str) -> String {
+    format!(
+        "CREATE LOGIN {} WITH PASSWORD = {}, CHECK_POLICY = ON, CHECK_EXPIRATION = OFF",
+        bracket_quote(login),
+        password_literal(password)
+    )
+}
+
+pub(crate) fn build_create_user_sql(user: &str, login: &str) -> String {
+    format!(
+        "CREATE USER {} FOR LOGIN {}",
+        bracket_quote(user),
+        bracket_quote(login)
+    )
+}
+
+pub(crate) fn build_drop_user_sql(user: &str) -> String {
+    format!("DROP USER {}", bracket_quote(user))
+}
+
+pub(crate) fn build_drop_login_sql(login: &str) -> String {
+    format!("DROP LOGIN {}", bracket_quote(login))
+}
+
+pub(crate) fn build_set_password_sql(login: &str, password: &str) -> String {
+    format!(
+        "ALTER LOGIN {} WITH PASSWORD = {}",
+        bracket_quote(login),
+        password_literal(password)
+    )
+}
+
 fn redact_password(mut message: String, password: &str) -> String {
     if !password.is_empty() {
         message = message.replace(password, "[REDACTED]");
@@ -408,11 +440,7 @@ pub async fn create_user(
         ));
     }
 
-    let create_login = format!(
-        "CREATE LOGIN {} WITH PASSWORD = {}, CHECK_POLICY = ON, CHECK_EXPIRATION = OFF",
-        bracket_quote(login),
-        password_literal(password)
-    );
+    let create_login = build_create_login_sql(login, password);
     conn.simple_query(create_login)
         .await
         .map_err(|error| {
@@ -426,15 +454,9 @@ pub async fn create_user(
         })?
         .into_results();
 
-    let create_database_user = format!(
-        "CREATE USER {} FOR LOGIN {}",
-        bracket_quote(user),
-        bracket_quote(login)
-    );
+    let create_database_user = build_create_user_sql(user, login);
     if let Err(error) = conn.simple_query(create_database_user).await {
-        let cleanup = conn
-            .simple_query(format!("DROP LOGIN {}", bracket_quote(login)))
-            .await;
+        let cleanup = conn.simple_query(build_drop_login_sql(login)).await;
         let cleanup_note = cleanup
             .err()
             .map(|cleanup_error| format!("; login cleanup also failed: {cleanup_error}"))
@@ -453,8 +475,7 @@ pub async fn create_user(
 
 pub async fn drop_user(conn: &mut BridgeConnection, user: &str, login: &str) -> Result<(), String> {
     ensure_account(conn, user, login).await?;
-    conn.simple_query(format!("DROP USER {}", bracket_quote(user)))
-        .await
+    conn.simple_query(build_drop_user_sql(user)).await
         .map_err(|error| {
             format!(
                 "Failed to drop database user {}. SQL Server may be protecting a schema or object owned by this user: {error}",
@@ -462,8 +483,7 @@ pub async fn drop_user(conn: &mut BridgeConnection, user: &str, login: &str) -> 
             )
         })?
         .into_results();
-    conn.simple_query(format!("DROP LOGIN {}", bracket_quote(login)))
-        .await
+    conn.simple_query(build_drop_login_sql(login)).await
         .map_err(|error| {
             format!(
                 "Database user {} was dropped, but its SQL Server login {} could not be dropped: {error}",
@@ -482,11 +502,7 @@ pub async fn set_password(
     password: &str,
 ) -> Result<(), String> {
     ensure_account(conn, user, login).await?;
-    let sql = format!(
-        "ALTER LOGIN {} WITH PASSWORD = {}",
-        bracket_quote(login),
-        password_literal(password)
-    );
+    let sql = build_set_password_sql(login, password);
     conn.simple_query(sql)
         .await
         .map_err(|error| {
@@ -670,6 +686,28 @@ fn canonical_privileges(
     Ok(canonical)
 }
 
+pub(crate) fn build_permission_change_sql(
+    database_name: &str,
+    user: &str,
+    database: Option<&str>,
+    table: Option<&str>,
+    privilege: &str,
+    grant: bool,
+) -> Result<String, String> {
+    let scope = RequestedScope::from_wire(database, table)?;
+    let privilege = canonical_privileges(&scope, &[privilege.to_string()])?
+        .into_iter()
+        .next()
+        .expect("one validated privilege");
+    let verb = if grant { "GRANT" } else { "REVOKE" };
+    let preposition = if grant { "TO" } else { "FROM" };
+    Ok(format!(
+        "{verb} {privilege} ON {} {preposition} {}",
+        scope.target_sql(database_name),
+        bracket_quote(user)
+    ))
+}
+
 #[allow(clippy::too_many_arguments)]
 pub async fn apply_privileges(
     conn: &mut BridgeConnection,
@@ -706,13 +744,14 @@ pub async fn apply_privileges(
         if already_granted == grant {
             continue;
         }
-        let verb = if grant { "GRANT" } else { "REVOKE" };
-        let preposition = if grant { "TO" } else { "FROM" };
-        statements.push(format!(
-            "{verb} {privilege} ON {} {preposition} {}",
-            scope.target_sql(database_name),
-            bracket_quote(user)
-        ));
+        statements.push(build_permission_change_sql(
+            database_name,
+            user,
+            database,
+            table,
+            &privilege,
+            grant,
+        )?);
     }
 
     if statements.is_empty() {

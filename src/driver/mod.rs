@@ -225,6 +225,9 @@ pub async fn execute_on_connection(
 }
 
 #[cfg(test)]
+mod sql_audit_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;

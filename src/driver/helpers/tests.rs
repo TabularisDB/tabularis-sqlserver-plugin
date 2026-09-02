@@ -78,9 +78,10 @@ fn bracket_quote_is_round_trip_safe_through_itself() {
 #[test]
 fn build_insert_sql_plain_emits_positional_placeholders() {
     let sql = build_insert_sql(
-        "[dbo].[Users]",
-        &["id".to_string(), "name".to_string(), "email".to_string()],
         None,
+        "Users",
+        &["id".to_string(), "name".to_string(), "email".to_string()],
+        false,
     );
     assert_eq!(
         sql,
@@ -102,9 +103,10 @@ fn wrap_dml_with_rowcount_keeps_multi_statement_batch_and_single_sentinel() {
 #[test]
 fn build_insert_sql_plain_quotes_column_identifiers() {
     let sql = build_insert_sql(
-        "[sales].[Orders]",
+        Some("sales"),
+        "Orders",
         &["order id".to_string(), "weird]col".to_string()],
-        None,
+        false,
     );
     assert!(sql.contains("([order id], [weird]]col])"));
     assert!(sql.contains("VALUES (@P1, @P2)"));
@@ -112,11 +114,7 @@ fn build_insert_sql_plain_quotes_column_identifiers() {
 
 #[test]
 fn build_insert_sql_with_identity_wraps_in_try_catch() {
-    let sql = build_insert_sql(
-        "[dbo].[Users]",
-        &["id".to_string(), "name".to_string()],
-        Some("[dbo].[Users]"),
-    );
+    let sql = build_insert_sql(None, "Users", &["id".to_string(), "name".to_string()], true);
     assert!(sql.contains("BEGIN TRY"));
     assert!(sql.contains("SET IDENTITY_INSERT [dbo].[Users] ON;"));
     assert!(sql.contains("INSERT INTO [dbo].[Users] ([id], [name]) VALUES (@P1, @P2);"));
@@ -146,12 +144,10 @@ fn build_insert_sql_with_identity_wraps_in_try_catch() {
 }
 
 #[test]
-fn build_insert_sql_with_identity_uses_provided_target() {
-    // Caller may pass a different qualified name as the IDENTITY_INSERT
-    // target (e.g. for round-trip tests with escaped identifiers).
-    let sql = build_insert_sql("[dbo].[T]", &["k".to_string()], Some("[s].[we]]ird]"));
-    assert!(sql.contains("SET IDENTITY_INSERT [s].[we]]ird] ON;"));
-    assert!(sql.contains("SET IDENTITY_INSERT [s].[we]]ird] OFF;"));
+fn build_insert_sql_with_identity_quotes_its_target() {
+    let sql = build_insert_sql(Some("9schéma]"), "weird\"name]", &["k".to_string()], true);
+    assert!(sql.contains("SET IDENTITY_INSERT [9schéma]]].[weird\"name]]] ON;"));
+    assert!(sql.contains("SET IDENTITY_INSERT [9schéma]]].[weird\"name]]] OFF;"));
 }
 
 #[test]

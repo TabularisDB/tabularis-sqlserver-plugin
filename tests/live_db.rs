@@ -466,6 +466,76 @@ fn crud_insert_update_and_delete_support_single_and_composite_primary_keys() {
 }
 
 #[test]
+fn hostile_identifiers_survive_ddl_and_crud_round_trip() {
+    const TABLE: &str = "[weird\"name]]";
+    const KEY_COLUMN: &str = "order";
+    const VALUE_COLUMN: &str = "9Δ\"value]";
+
+    let mut plugin = Plugin::with_scratch_database();
+    let table_ref = format!("{}.{}", bracket_quote(TEST_SCHEMA), bracket_quote(TABLE));
+    plugin.execute(format!("DROP TABLE IF EXISTS {table_ref}"));
+
+    let create = generated_create_table_sql(
+        &mut plugin,
+        TABLE,
+        json!([
+            {
+                "name": KEY_COLUMN, "data_type": "INT", "is_nullable": false,
+                "is_pk": true, "is_auto_increment": false, "default_value": null
+            },
+            {
+                "name": VALUE_COLUMN, "data_type": "NVARCHAR(100)", "is_nullable": false,
+                "is_pk": false, "is_auto_increment": false, "default_value": null
+            }
+        ]),
+    );
+    for statement in create {
+        plugin.execute(statement);
+    }
+
+    assert_eq!(
+        plugin.call_ok(
+            "insert_record",
+            json!({
+                "params": connection_params(), "schema": TEST_SCHEMA, "table": TABLE,
+                "data": { "order": 7, "9Δ\"value]": "before" }
+            }),
+        ),
+        json!(1)
+    );
+    assert_eq!(
+        plugin.call_ok(
+            "update_record",
+            json!({
+                "params": connection_params(), "schema": TEST_SCHEMA, "table": TABLE,
+                "pk_map": { "order": 7 }, "col_name": VALUE_COLUMN, "new_val": "after"
+            }),
+        ),
+        json!(1)
+    );
+
+    let selected = plugin.execute(format!(
+        "SELECT {} FROM {table_ref} WHERE {} = 7",
+        bracket_quote(VALUE_COLUMN),
+        bracket_quote(KEY_COLUMN),
+    ));
+    assert_eq!(selected["columns"], json!([VALUE_COLUMN]));
+    assert_eq!(selected["rows"], json!([["after"]]));
+
+    assert_eq!(
+        plugin.call_ok(
+            "delete_record",
+            json!({
+                "params": connection_params(), "schema": TEST_SCHEMA, "table": TABLE,
+                "pk_map": { "order": 7 }
+            }),
+        ),
+        json!(1)
+    );
+    plugin.execute(format!("DROP TABLE {table_ref}"));
+}
+
+#[test]
 fn zero_row_select_preserves_column_headers() {
     let mut plugin = Plugin::with_scratch_database();
     let result = plugin

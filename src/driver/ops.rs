@@ -108,6 +108,26 @@ pub async fn get_indexes(
 
 // --- Views --------------------------------------------------------------
 
+pub(crate) fn build_create_view_sql(
+    view_name: &str,
+    definition: &str,
+    schema: Option<&str>,
+) -> String {
+    format!("CREATE VIEW {} AS {definition}", qualify(schema, view_name))
+}
+
+pub(crate) fn build_alter_view_sql(
+    view_name: &str,
+    definition: &str,
+    schema: Option<&str>,
+) -> String {
+    format!("ALTER VIEW {} AS {definition}", qualify(schema, view_name))
+}
+
+pub(crate) fn build_drop_view_sql(view_name: &str, schema: Option<&str>) -> String {
+    format!("DROP VIEW IF EXISTS {}", qualify(schema, view_name))
+}
+
 pub async fn get_views(
     params: &ConnectionParams,
     schema: Option<&str>,
@@ -143,11 +163,7 @@ pub async fn create_view(
     definition: &str,
     schema: Option<&str>,
 ) -> Result<(), String> {
-    let sql = format!(
-        "CREATE VIEW {} AS {}",
-        qualify(schema, view_name),
-        definition
-    );
+    let sql = build_create_view_sql(view_name, definition, schema);
     let mut conn = acquire(params).await?;
     conn.simple_query(sql)
         .await
@@ -162,11 +178,7 @@ pub async fn alter_view(
     definition: &str,
     schema: Option<&str>,
 ) -> Result<(), String> {
-    let sql = format!(
-        "ALTER VIEW {} AS {}",
-        qualify(schema, view_name),
-        definition
-    );
+    let sql = build_alter_view_sql(view_name, definition, schema);
     let mut conn = acquire(params).await?;
     conn.simple_query(sql)
         .await
@@ -180,7 +192,7 @@ pub async fn drop_view(
     view_name: &str,
     schema: Option<&str>,
 ) -> Result<(), String> {
-    let sql = format!("DROP VIEW IF EXISTS {}", qualify(schema, view_name));
+    let sql = build_drop_view_sql(view_name, schema);
     let mut conn = acquire(params).await?;
     conn.simple_query(sql)
         .await
@@ -424,16 +436,7 @@ pub async fn insert_record(
         .map(|id| columns.iter().any(|c| c.eq_ignore_ascii_case(id)))
         .unwrap_or(false);
 
-    let qualified = helpers::qualify(schema, table);
-    let sql = helpers::build_insert_sql(
-        &qualified,
-        &columns,
-        if needs_identity_insert {
-            Some(qualified.as_str())
-        } else {
-            None
-        },
-    );
+    let sql = helpers::build_insert_sql(schema, table, &columns, needs_identity_insert);
 
     // Map each JSON value to a typed SQL parameter. Owned boxes live
     // for the duration of the call so the borrowed `&dyn ToSql` slice is
@@ -633,22 +636,38 @@ pub fn get_create_foreign_key_sql(
     )
 }
 
+pub(crate) fn build_drop_index_sql(table: &str, index_name: &str, schema: Option<&str>) -> String {
+    format!(
+        "DROP INDEX {} ON {}",
+        bracket_quote(index_name),
+        qualify(schema, table),
+    )
+}
+
 pub async fn drop_index(
     params: &ConnectionParams,
     table: &str,
     index_name: &str,
     schema: Option<&str>,
 ) -> Result<(), String> {
-    let sql = format!(
-        "DROP INDEX {} ON {}",
-        bracket_quote(index_name),
-        qualify(schema, table),
-    );
+    let sql = build_drop_index_sql(table, index_name, schema);
     let mut conn = acquire(params).await?;
     conn.execute(sql, &[])
         .await
         .map_err(|error| error.to_string())?;
     Ok(())
+}
+
+pub(crate) fn build_drop_foreign_key_sql(
+    table: &str,
+    fk_name: &str,
+    schema: Option<&str>,
+) -> String {
+    format!(
+        "ALTER TABLE {} DROP CONSTRAINT {}",
+        qualify(schema, table),
+        bracket_quote(fk_name),
+    )
 }
 
 pub async fn drop_foreign_key(
@@ -657,11 +676,7 @@ pub async fn drop_foreign_key(
     fk_name: &str,
     schema: Option<&str>,
 ) -> Result<(), String> {
-    let sql = format!(
-        "ALTER TABLE {} DROP CONSTRAINT {}",
-        qualify(schema, table),
-        bracket_quote(fk_name),
-    );
+    let sql = build_drop_foreign_key_sql(table, fk_name, schema);
     let mut conn = acquire(params).await?;
     conn.execute(sql, &[])
         .await
