@@ -656,32 +656,90 @@ fn identity_insert_succeeds_and_failure_restores_session_state() {
 }
 
 #[test]
-fn pagination_returns_ordered_pages_has_more_and_explicit_unknown_total() {
+fn pagination_and_batch_semantics_cover_ordered_unordered_cte_and_dml() {
     let mut plugin = Plugin::with_scratch_database();
-    plugin.reset_table("pagination", "id INT PRIMARY KEY");
+    plugin.reset_table(
+        "pagination",
+        "id INT PRIMARY KEY, touched BIT NOT NULL DEFAULT 0",
+    );
     plugin.execute(format!(
-        "INSERT INTO [{TEST_SCHEMA}].[pagination] VALUES (1), (2), (3), (4), (5)"
+        "INSERT INTO [{TEST_SCHEMA}].[pagination] (id) VALUES (1), (2), (3), (4), (5)"
     ));
-    let query = format!("SELECT id FROM [{TEST_SCHEMA}].[pagination] ORDER BY id");
+    let ordered_query = format!("SELECT id FROM [{TEST_SCHEMA}].[pagination] ORDER BY id");
 
     let page_one = plugin.call_ok(
         "execute_query",
-        json!({ "params": connection_params(), "query": query, "limit": 2, "page": 1 }),
+        json!({ "params": connection_params(), "query": ordered_query, "limit": 2, "page": 1 }),
     );
     assert_eq!(page_one["rows"], json!([[1], [2]]));
     assert_eq!(page_one["pagination"]["page"], 1);
     assert_eq!(page_one["pagination"]["page_size"], 2);
     assert_eq!(page_one["pagination"]["has_more"], true);
     assert_eq!(page_one["pagination"]["total_rows"], Value::Null);
+    assert_eq!(page_one["truncated"], true);
+    assert!(page_one.get("additional_results").is_none());
 
-    let page_two = plugin.call_ok(
+    let final_page = plugin.call_ok(
         "execute_query",
-        json!({ "params": connection_params(), "query": query, "limit": 2, "page": 2 }),
+        json!({ "params": connection_params(), "query": ordered_query, "limit": 2, "page": 3 }),
     );
-    assert_eq!(page_two["rows"], json!([[3], [4]]));
-    assert_eq!(page_two["pagination"]["page"], 2);
-    assert_eq!(page_two["pagination"]["has_more"], true);
-    assert_eq!(page_two["pagination"]["total_rows"], Value::Null);
+    assert_eq!(final_page["rows"], json!([[5]]));
+    assert_eq!(final_page["pagination"]["has_more"], false);
+    assert_eq!(final_page["truncated"], false);
+
+    let unordered = plugin.call_ok(
+        "execute_query",
+        json!({
+            "params": connection_params(),
+            "query": format!("SELECT id FROM [{TEST_SCHEMA}].[pagination]"),
+            "limit": 2,
+            "page": 1
+        }),
+    );
+    assert_eq!(result_rows(&unordered).len(), 2);
+    assert_eq!(unordered["pagination"]["has_more"], true);
+    assert_eq!(unordered["pagination"]["total_rows"], Value::Null);
+
+    let cte = plugin.call_ok(
+        "execute_query",
+        json!({
+            "params": connection_params(),
+            "query": format!(
+                "WITH source AS (SELECT id FROM [{TEST_SCHEMA}].[pagination] WHERE id >= 2) \
+                 SELECT id FROM source ORDER BY id DESC"
+            ),
+            "limit": 2,
+            "page": 2
+        }),
+    );
+    assert_eq!(cte["rows"], json!([[3], [2]]));
+    assert_eq!(cte["pagination"]["has_more"], false);
+
+    let batch = plugin.call_ok(
+        "execute_query_batch",
+        json!({
+            "params": connection_params(),
+            "queries": [
+                format!("UPDATE [{TEST_SCHEMA}].[pagination] SET touched = 1 WHERE id = 1"),
+                ordered_query,
+                format!(
+                    "SELECT id INTO #ss041_selected FROM [{TEST_SCHEMA}].[pagination] WHERE id <= 3"
+                ),
+                "SELECT id FROM #ss041_selected ORDER BY id"
+            ],
+            "limit": 2,
+            "page": 1
+        }),
+    );
+    assert_eq!(batch[0]["result"]["affected_rows"], 1);
+    assert!(batch[0]["result"].get("additional_results").is_none());
+    assert_eq!(batch[1]["result"]["rows"], json!([[1], [2]]));
+    assert_eq!(batch[1]["result"]["pagination"]["has_more"], true);
+    assert_eq!(batch[2]["result"]["affected_rows"], 3);
+    assert_eq!(batch[2]["result"]["rows"], json!([]));
+    assert!(batch[2]["result"].get("additional_results").is_none());
+    assert_eq!(batch[3]["result"]["rows"], json!([[1], [2]]));
+    assert_eq!(batch[3]["result"]["pagination"]["has_more"], true);
 }
 
 #[test]

@@ -29,6 +29,7 @@ This plugin enables Tabularis to connect to SQL Server instances, providing sche
 - [Screenshots](#screenshots)
 - [Connection Configuration](#connection-configuration)
 - [Plugin Settings](#plugin-settings)
+- [Query Execution Semantics](#query-execution-semantics)
 - [Supported Data Types](#supported-data-types)
 - [Database Users and Privileges](#database-users-and-privileges)
 - [Installation](#installation)
@@ -150,6 +151,38 @@ connection after the plugin is restarted, not on live pooled sessions.
 `trust_server_certificate` is an explicit escape hatch for self-signed
 certificates in a verifying TLS mode. The `prefer` and `require` modes already
 accept the server certificate as described above.
+
+## Query Execution Semantics
+
+Tabularis sends `limit` and `page` when result paging is enabled. The plugin
+adds pagination only to one top-level `SELECT` or `VALUES` statement, including
+a CTE whose final operation is a `SELECT`. DML, `EXEC`, `SELECT ... INTO`, and
+multi-statement SQL run without pagination metadata. `execute_query` and every
+statement in `execute_query_batch` use this same classification and execution
+path.
+
+For a paginated query the plugin requests `page_size + 1` rows. It returns at
+most `page_size`, sets `has_more` when the lookahead row exists, and sets
+`truncated` to the same value because that lookahead row was omitted.
+`pagination.total_rows` remains `null`: normal page fetches never run a hidden
+count query. The Tabularis **Count rows** action obtains a total separately by
+running a `SELECT COUNT(*)` wrapper with pagination disabled. That count can
+scan the full query result on a large table, but its cost is incurred only when
+the host explicitly requests it.
+
+SQL Server requires `ORDER BY` with `OFFSET ... FETCH`. If the query has no
+top-level `ORDER BY`, the plugin injects `ORDER BY (SELECT NULL)` so paging
+still works. This deliberately does **not** promise stable page boundaries:
+rows can move between or repeat across pages because SQL Server may choose any
+order. Add a deterministic `ORDER BY`, ideally ending in a unique key, whenever
+page-to-page stability matters. An `ORDER BY` inside a subquery or `OVER(...)`
+does not order the outer result and therefore does not prevent this injection.
+
+When one SQL statement produces multiple result sets, the first occupies the
+normal `columns` and `rows` fields and only real subsequent result sets appear
+in `additional_results`. Batch-RPC statements remain separate batch entries.
+The private `@@ROWCOUNT` result set used to recover SQL Server DML affected-row
+counts is always removed and never appears in `additional_results`.
 
 ## Supported Data Types
 

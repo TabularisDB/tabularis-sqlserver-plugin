@@ -268,8 +268,6 @@ pub fn build_update_composite_sql(
     ))
 }
 
-/// Apply SQL Server `OFFSET … FETCH` pagination, requesting one extra row so
-/// callers can determine whether another page exists.
 pub fn render_column_definition(column: &ColumnDefinition, inline_primary_key: bool) -> String {
     let mut definition = format!("{} {}", bracket_quote(&column.name), column.data_type);
     if column.is_auto_increment {
@@ -308,30 +306,18 @@ pub fn query_reports_affected_rows(query: &str) -> bool {
         .last()
         .map(|statement| {
             let words = top_level_words(statement);
-            let operation = if words.first().map(String::as_str) == Some("WITH") {
-                words.iter().skip(1).find(|word| {
-                    matches!(
-                        word.as_str(),
-                        "SELECT"
-                            | "VALUES"
-                            | "EXEC"
-                            | "EXECUTE"
-                            | "INSERT"
-                            | "UPDATE"
-                            | "DELETE"
-                            | "MERGE"
-                    )
-                })
-            } else {
-                words.first()
-            };
-            operation.is_some_and(|word| {
-                matches!(word.as_str(), "INSERT" | "UPDATE" | "DELETE" | "MERGE")
+            statement_operation(&words).is_some_and(|(operation_index, operation)| {
+                matches!(operation, "INSERT" | "UPDATE" | "DELETE" | "MERGE")
+                    || (operation == "SELECT" && select_has_top_level_into(&words, operation_index))
             })
         })
         .unwrap_or(false)
 }
 
+/// Apply SQL Server `OFFSET … FETCH` pagination, requesting one extra row so
+/// callers can determine whether another page exists. SQL Server requires an
+/// `ORDER BY`; for an unordered query the synthetic order keeps the host's
+/// pagination contract available but cannot make page boundaries stable.
 pub fn build_paginated_query(query: &str, page_size: u32, page: u32) -> String {
     let normalized = query.trim().trim_end_matches(';').trim_end();
     let offset = page.saturating_sub(1).saturating_mul(page_size);
@@ -348,47 +334,49 @@ pub fn build_paginated_query(query: &str, page_size: u32, page: u32) -> String {
 
 fn statement_can_be_paginated(statement: &str) -> bool {
     let words = top_level_words(statement);
-    match words.first().map(String::as_str) {
-        Some("SELECT" | "VALUES") => true,
-        Some("WITH") => words
-            .iter()
-            .skip(1)
-            .find_map(|word| match word.as_str() {
-                "SELECT" | "VALUES" => Some(true),
-                "INSERT" | "UPDATE" | "DELETE" | "MERGE" | "EXEC" | "EXECUTE" => Some(false),
-                _ => None,
-            })
-            .unwrap_or(false),
+    statement_operation(&words).is_some_and(|(operation_index, operation)| match operation {
+        "SELECT" => !select_has_top_level_into(&words, operation_index),
+        "VALUES" => true,
         _ => false,
-    }
+    })
 }
 
 fn statement_returns_result_set(statement: &str) -> bool {
     let words = top_level_words(statement);
-    let Some(first) = words.first().map(String::as_str) else {
+    let Some((operation_index, operation)) = statement_operation(&words) else {
         return false;
     };
-    let dml_returns_rows =
-        |start: usize| words[start..].iter().any(|word| word.as_str() == "OUTPUT");
+    let dml_returns_rows = words[operation_index + 1..]
+        .iter()
+        .any(|word| word == "OUTPUT");
 
+    match operation {
+        "SELECT" => !select_has_top_level_into(&words, operation_index),
+        "VALUES" | "EXEC" | "EXECUTE" => true,
+        "INSERT" | "UPDATE" | "DELETE" | "MERGE" => dml_returns_rows,
+        _ => crate::common::returns_result_set(statement),
+    }
+}
+
+fn statement_operation(words: &[String]) -> Option<(usize, &str)> {
+    let first = words.first()?;
     if first != "WITH" {
-        return match first {
-            "EXEC" | "EXECUTE" => true,
-            "INSERT" | "UPDATE" | "DELETE" | "MERGE" => dml_returns_rows(1),
-            _ => crate::common::returns_result_set(statement),
-        };
+        return Some((0, first.as_str()));
     }
 
-    words
+    words.iter().enumerate().skip(1).find_map(|(index, word)| {
+        matches!(
+            word.as_str(),
+            "SELECT" | "VALUES" | "EXEC" | "EXECUTE" | "INSERT" | "UPDATE" | "DELETE" | "MERGE"
+        )
+        .then_some((index, word.as_str()))
+    })
+}
+
+fn select_has_top_level_into(words: &[String], operation_index: usize) -> bool {
+    words[operation_index + 1..]
         .iter()
-        .enumerate()
-        .skip(1)
-        .find_map(|(index, word)| match word.as_str() {
-            "SELECT" | "VALUES" | "EXEC" | "EXECUTE" => Some(true),
-            "INSERT" | "UPDATE" | "DELETE" | "MERGE" => Some(dml_returns_rows(index + 1)),
-            _ => None,
-        })
-        == Some(true)
+        .any(|word| word == "INTO")
 }
 
 fn top_level_words(statement: &str) -> Vec<String> {
@@ -532,93 +520,10 @@ fn code_mask(query: &str) -> String {
 }
 
 fn contains_top_level_order_by(query: &str) -> bool {
-    #[derive(Clone, Copy, PartialEq, Eq)]
-    enum State {
-        Normal,
-        SingleQuote,
-        DoubleQuote,
-        Bracket,
-        LineComment,
-        BlockComment,
-    }
-
-    let upper = query.to_ascii_uppercase();
-    let characters: Vec<(usize, char)> = upper.char_indices().collect();
-    let mut state = State::Normal;
-    let mut depth = 0_u32;
-    let mut position = 0;
-
-    while position < characters.len() {
-        let (byte_index, character) = characters[position];
-        let next = characters.get(position + 1).map(|(_, value)| *value);
-        match state {
-            State::Normal => match (character, next) {
-                ('\'', _) => state = State::SingleQuote,
-                ('"', _) => state = State::DoubleQuote,
-                ('[', _) => state = State::Bracket,
-                ('-', Some('-')) => {
-                    state = State::LineComment;
-                    position += 1;
-                }
-                ('/', Some('*')) => {
-                    state = State::BlockComment;
-                    position += 1;
-                }
-                ('(', _) => depth = depth.saturating_add(1),
-                (')', _) => depth = depth.saturating_sub(1),
-                _ if depth == 0 && token_at(&upper, byte_index, "ORDER BY") => return true,
-                _ => {}
-            },
-            State::SingleQuote if character == '\'' => {
-                if next == Some('\'') {
-                    position += 1;
-                } else {
-                    state = State::Normal;
-                }
-            }
-            State::DoubleQuote if character == '"' => {
-                if next == Some('"') {
-                    position += 1;
-                } else {
-                    state = State::Normal;
-                }
-            }
-            State::Bracket if character == ']' => {
-                if next == Some(']') {
-                    position += 1;
-                } else {
-                    state = State::Normal;
-                }
-            }
-            State::LineComment if matches!(character, '\n' | '\r') => state = State::Normal,
-            State::BlockComment if character == '*' && next == Some('/') => {
-                state = State::Normal;
-                position += 1;
-            }
-            _ => {}
-        }
-        position += 1;
-    }
-    false
-}
-
-fn token_at(haystack: &str, index: usize, needle: &str) -> bool {
-    if !haystack[index..].starts_with(needle) {
-        return false;
-    }
-    let is_identifier = |character: char| character.is_alphanumeric() || character == '_';
-    let left_is_clear = index == 0
-        || !haystack[..index]
-            .chars()
-            .next_back()
-            .map(is_identifier)
-            .unwrap_or(false);
-    let right_is_clear = haystack[index + needle.len()..]
-        .chars()
-        .next()
-        .map(|character| !is_identifier(character))
-        .unwrap_or(true);
-    left_is_clear && right_is_clear
+    let words = top_level_words(&code_mask(query));
+    words
+        .windows(2)
+        .any(|pair| pair[0] == "ORDER" && pair[1] == "BY")
 }
 
 #[cfg(test)]
