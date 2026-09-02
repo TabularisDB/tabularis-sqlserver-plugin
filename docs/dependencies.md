@@ -20,8 +20,10 @@ release-critical dependency because both crates are preview releases.
   [published manifest](https://docs.rs/crate/mssql-tiberius-bridge/0.1.0-preview.3/source/Cargo.toml.orig).
   MIT is compatible with this plugin's Apache-2.0 licence. The upstream
   repository and published crate do not currently include a standalone licence
-  text, so the declaration is the licence evidence and the omission should be
-  corrected upstream before a public binary release.
+  text, so the declaration is the licence evidence. Resolving that omission
+  and the release archive's third-party-notice policy before public binary
+  distribution is tracked in
+  [issue #4](https://github.com/TabularisDB/tabularis-sqlserver-plugin/issues/4).
 - **Release cadence:** all five published previews arrived in a ten-day burst:
   preview.1 on 2026-05-08, preview.2 and preview.3 on 2026-05-10, preview.4
   later on 2026-05-10, and
@@ -117,8 +119,10 @@ date above.
   also preserves headers for zero-row result sets.
 - [Bridge #88](https://github.com/saurabh500/mssql-tiberius-bridge/issues/88)
   says cancellation safety under `tokio::time::timeout` has not been audited.
-  The plugin currently does not cancel in-flight client futures with a Tokio
-  timeout. This must be resolved before adding such a timeout.
+  The plugin now applies its configured query timeout with Tokio and marks the
+  connection non-recyclable on timeout, so no later request receives a stream
+  with unread packets. The live suite verifies timeout categorization and
+  replacement-session recovery. Re-audit this boundary on every bridge update.
 - [Bridge #89](https://github.com/saurabh500/mssql-tiberius-bridge/issues/89)
   tracks the unverified encryption-off handshake. It is relevant to the
   plugin's `ssl_mode=disable` mapping and must be included in TLS live tests.
@@ -159,9 +163,10 @@ When considering preview.4 or any later release:
 
 If the bridge is abandoned or develops a blocking correctness, security, or
 reliability bug that cannot be fixed promptly, the fallback is the stable
-`tiberius 0.12` implementation that this branch replaced. It remains one
-revert away in the parent of client-swap commit
-[`f2afb7b`](https://github.com/TabularisDB/tabularis-sqlserver-plugin/commit/f2afb7b).
+`tiberius 0.12` implementation that this branch replaced. It remains
+available in the parent of client-swap commit
+[`f2afb7b`](https://github.com/TabularisDB/tabularis-sqlserver-plugin/commit/f2afb7b)
+and can be restored with an explicit rollback.
 Restore that implementation rather than carrying an indefinite private fork of
 both preview crates.
 
@@ -204,7 +209,7 @@ is selected, not LGPL.
 This inventory is based on package manifests as resolved by Cargo, including
 platform-specific and lockfile-only entries. Release packaging must retain the
 applicable third-party notices; this review does not replace that packaging
-step.
+step. The unresolved archive-policy work is tracked in issue #4.
 
 ## RustSec audit
 

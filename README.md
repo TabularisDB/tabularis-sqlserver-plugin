@@ -19,7 +19,8 @@ A [Microsoft SQL Server](https://www.microsoft.com/sql-server) plugin for [Tabul
 This plugin enables Tabularis to connect to SQL Server instances, providing schema introspection, query execution, full CRUD, DDL, trigger and stored-routine management, BLOB handling, database-user management, and visual execution plans through a JSON-RPC 2.0 over stdio interface. It is written in Rust on top of Microsoft's [`mssql-tds`](https://github.com/microsoft/mssql-rust) protocol implementation (via [`mssql-tiberius-bridge`](https://crates.io/crates/mssql-tiberius-bridge)) with [`deadpool`](https://crates.io/crates/deadpool) connection pooling.
 
 > **Requires Tabularis v0.23.0 or later.** This plugin relies on raw plugin
-> EXPLAIN output and plugin-provided parser bundle loading from that release.
+> EXPLAIN output and plugin-provided parser bundle loading targeted for that
+> release. Do not publish this candidate before a compatible host is available.
 
 **Discord** — [Join our Discord server](https://discord.com/invite/K2hmhfHRSt) and chat with the maintainers.
 
@@ -32,6 +33,7 @@ This plugin enables Tabularis to connect to SQL Server instances, providing sche
 - [Query Execution Semantics](#query-execution-semantics)
 - [Supported Data Types](#supported-data-types)
 - [Database Users and Privileges](#database-users-and-privileges)
+- [Visual EXPLAIN](#visual-explain)
 - [Installation](#installation)
 - [How It Works](#how-it-works)
 - [Supported Operations](#supported-operations)
@@ -56,7 +58,7 @@ This plugin enables Tabularis to connect to SQL Server instances, providing sche
 - Procedure/function management, typed `OUT`/`INOUT` variables, and table-valued functions
 - Static and runtime execution plans through `SHOWPLAN_XML` / `STATISTICS XML`, rendered in Tabularis's Visual EXPLAIN
 - JavaScript-safe `BIGINT` extraction and broad SQL Server type handling
-- Pre-built release targets for Linux x86_64, macOS x86_64 and Apple Silicon, and Windows x86_64
+- Release workflow targets for Linux x86_64 and ARM64, macOS x86_64 and Apple Silicon, and Windows x86_64
 
 ## Screenshots
 
@@ -267,19 +269,39 @@ if they were direct grants. Because SQL Server `DENY` overrides `GRANT`, the
 plugin refuses to alter a denied permission; remove that `DENY` explicitly in
 SQL before managing the permission through Tabularis.
 
+## Visual EXPLAIN
+
+The Rust process safely captures estimated `SHOWPLAN_XML` or runtime
+`STATISTICS XML`, restores the session option, and returns the untouched XML as
+raw format `sqlserver-showplan-xml`. It does not parse plan trees itself.
+Tabularis v0.23.0 or later reads `explain/dist/index.iife.js` from the installed
+plugin and registers that isolated TypeScript parser with
+`@tabularis/explain`.
+
+The same source builds the independently versioned
+`@tabularis/explain-sqlserver` ESM package for browser and Node consumers such
+as [explain.tabularis.dev](https://explain.tabularis.dev). This keeps SQL Server
+semantics owned by this plugin while letting renderer improvements apply
+without another Rust implementation. The complete parser and wire contract is
+in [`docs/explain-architecture.md`](docs/explain-architecture.md).
+
 ## Installation
 
 ### Automatic (via Tabularis)
 
-Open **Settings → Plugins** in Tabularis and install *SQL Server* from the plugin registry.
+After the first release is published and registered, open **Settings → Plugins**
+in Tabularis and install *SQL Server* from the plugin registry. Publication
+status is tracked in [issue #4](https://github.com/TabularisDB/tabularis-sqlserver-plugin/issues/4).
 
 ### Manual Installation
+
+Once release assets are available:
 
 1. Download the ZIP for your platform from the [releases page](https://github.com/TabularisDB/tabularis-sqlserver-plugin/releases).
 2. Extract it into the Tabularis plugins directory:
    - **Linux:** `~/.local/share/tabularis/plugins/sqlserver/`
-   - **macOS:** `~/Library/Application Support/com.debba.tabularis/plugins/sqlserver/`
-   - **Windows:** `%APPDATA%\debba\tabularis\data\plugins\sqlserver\`
+   - **macOS:** `~/Library/Application Support/tabularis/plugins/sqlserver/`
+   - **Windows:** `%APPDATA%\tabularis\plugins\sqlserver\`
 3. On Linux/macOS, make the binary executable: `chmod +x sqlserver-plugin`
 4. Restart Tabularis — *SQL Server* appears in the connection picker.
 
@@ -328,7 +350,7 @@ remaining pools.
 ### Prerequisites
 
 - Rust (stable, see `rust-toolchain.toml`)
-- Node.js 20 or newer and pnpm for the bundled Visual EXPLAIN parser
+- Node.js 22.13 or newer and pnpm 11 for building the bundled Visual EXPLAIN parser
 - [`just`](https://github.com/casey/just) (optional, wraps the common build and test commands)
 
 ### Build

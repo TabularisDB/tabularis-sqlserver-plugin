@@ -7,9 +7,9 @@ worker topology.
 
 ## Environment and method
 
-Measurements were taken on 2026-09-02 from commit `6f0f55b` plus the SS-045
-working change, using an optimized `cargo build --release` binary and a local
-Docker container over `127.0.0.1`:
+Measurements were taken on 2026-09-02 from release-candidate commit
+`45a90b9`, using an optimized `cargo build --release` binary and a local Docker
+container over `127.0.0.1`:
 
 - Linux 5.4.0 x86-64, 8 logical CPUs, 31.2 GiB RAM;
 - Rust 1.98.0;
@@ -100,8 +100,9 @@ so syntax does not create duplicate pools.
 
 JSON-RPC returns one JSON line and cannot stream rows incrementally. The old
 collector retained every row when `limit` was absent, allowing a million-row
-query to grow until the process or host ran out of memory. SS-045 adds a hard
-budget of 10,000 retained rows across a statement's result sets. On the next
+query to grow until the process or host ran out of memory. The release
+candidate applies a hard budget of 10,000 retained rows across a statement's
+result sets. On the next
 row it sets `truncated: true`, closes the remaining TDS stream, and keeps the
 pooled session reusable. An explicit page limit cannot bypass this safety
 budget. Result-bearing DML drains excess `OUTPUT` rows without retaining them

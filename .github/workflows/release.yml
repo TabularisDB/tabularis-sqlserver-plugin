@@ -89,7 +89,8 @@ jobs:
         if: steps.ui.outputs.present == 'true' || steps.explain.outputs.present == 'true'
         uses: actions/setup-node@v5
         with:
-          node-version: "20"
+          # pnpm 11.23 requires Node 22.13 or newer.
+          node-version: "22.13"
 
       - name: Build UI
         if: steps.ui.outputs.present == 'true'
@@ -190,8 +191,10 @@ jobs:
 
       - name: Detect prerelease from tag
         id: meta
+        env:
+          TAG_NAME: ${{ github.ref_name }}
         run: |
-          if [[ "${{ github.ref_name }}" == *-* ]]; then
+          if [[ "$TAG_NAME" == *-* ]]; then
             echo "prerelease=true" >> "$GITHUB_OUTPUT"
           else
             echo "prerelease=false" >> "$GITHUB_OUTPUT"

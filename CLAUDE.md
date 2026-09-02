@@ -35,13 +35,16 @@ src/
   rpc.rs            # JSON-RPC dispatch + response/param helpers
   models.rs         # serde shapes mirroring the Tabularis host's models
   common.rs         # query classification + JS-safe integer helpers
-  pool_manager.rs   # per-connection-key deadpool cache
+  connection.rs     # URL/keyword connection strings and canonical reconciliation
+  settings.rs       # forgiving process settings received by initialize
+  pool_manager.rs   # canonical-key deadpool cache and idle eviction
   handlers/         # thin JSON adapters, one module per RPC area
   driver/           # SQL Server logic
     ops.rs          # one free function per host RPC method
-    pool.rs         # Microsoft mssql-tds client via bridge + deadpool Manager (TLS modes, startup scripts)
-    introspection.rs, helpers.rs, ddl/, routines/, triggers/, types.rs, version.rs
-    extract/        # row → JSON value extraction (incl. temporal types)
+    pool.rs         # Microsoft mssql-tds bridge + deadpool Manager, TLS and reset
+    error.rs        # categorized errors, discard policy and credential redaction
+    blob.rs, users.rs, introspection.rs, helpers.rs, ddl/, routines/, triggers/, types.rs
+    extract/        # row → JSON value extraction, including temporal types
     explain.rs      # raw SHOWPLAN_XML / STATISTICS XML capture
   explain/          # TypeScript SHOWPLAN parser, plugin IIFE and npm package
 ```

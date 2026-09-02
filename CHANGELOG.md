@@ -7,14 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### BREAKING
+The release candidate version is `1.0.0-beta.1`; it has not yet been tagged or
+published. Publication is tracked in
+[issue #4](https://github.com/TabularisDB/tabularis-sqlserver-plugin/issues/4).
+
+### Breaking
 
 - Visual EXPLAIN now returns raw `sqlserver-showplan-xml` for the plugin-owned
   TypeScript parser instead of parsing SHOWPLAN in the Rust process. This
-  requires Tabularis 0.23.0 or later, the first runtime with raw plugin
-  EXPLAIN output and plugin parser-bundle loading.
-
-## [1.0.0-beta.1] - 2026-08-30
+  requires Tabularis 0.23.0 or later, the first intended runtime with raw
+  plugin EXPLAIN output and plugin parser-bundle loading.
 
 ### Changed
 
@@ -26,6 +28,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   of retaining the scaffold's `0.1.0` version. Pull-request
   `prerelease:alpha`, `prerelease:beta`, `prerelease:rc`, and
   `prerelease:stable` labels drive version suggestions.
+- Aligned paging with host lookahead semantics, made totals explicitly
+  on-demand, and capped each statement at 10,000 retained rows across result
+  sets.
 
 ### Added
 
@@ -37,18 +42,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   query timeouts, TDS application identity, certificate trust, and idle pool
   eviction.
 - SQL-authenticated login and database-user lifecycle management, privilege
-  catalogs, direct and inherited grant reporting, and transactional
-  privilege changes.
+  catalogs, direct and inherited grant reporting, and transactional privilege
+  changes.
 - Registry-grade manifest metadata, SQL Server branding and screenshots,
   native type mappings, synchronized data-type declarations, and release
-  archives for five desktop platforms.
+  workflows for five desktop platforms.
+- A browser-safe SQL Server SHOWPLAN parser built as both the plugin IIFE and
+  the independently publishable `@tabularis/explain-sqlserver` package.
 - CI checks for formatting, Clippy, unit and live SQL Server 2022 tests,
   manifest and Markdown validation, Conventional Commit pull-request titles,
-  version suggestions, dependency updates, RustSec advisories, and release
-  tag/version agreement.
-- Schema and object introspection, query and batch execution, CRUD, DDL,
-  views, routines, triggers, visual execution plans, JavaScript-safe integer
-  extraction, and broad SQL Server type handling.
+  version suggestions, dependency updates, RustSec advisories, release
+  tag/version agreement, and the TypeScript parser package.
+- Host-model conformance fixtures for every implemented RPC and a live type
+  matrix for all 37 manifest-advertised SQL Server types.
 
-[Unreleased]: https://github.com/TabularisDB/tabularis-sqlserver-plugin/compare/v1.0.0-beta.1...HEAD
-[1.0.0-beta.1]: https://github.com/TabularisDB/tabularis-sqlserver-plugin/releases/tag/v1.0.0-beta.1
+### Fixed
+
+- Hardened identifier quoting and separated identifier, bound-value and
+  explicit raw-SQL boundaries throughout CRUD, DDL, routine, trigger and user
+  management.
+- Preserved exact numeric, temporal, BLOB, UDT and `SQL_VARIANT` values across
+  reads and row edits; concurrency-token types remain read-only.
+- Added structured SQL Server error categories, credential redaction and safe
+  replacement of timed-out, failed, transactional or dead pooled sessions.
+- Reset SHOWPLAN, `IDENTITY_INSERT`, startup-script and temporary-table state
+  before pooled session reuse.
+
+### Performance
+
+- Added bounded request and response queues, explicit idle-pool closing and
+  regression coverage for pool identity, million-row truncation and concurrent
+  responsiveness.
+
+[Unreleased]: https://github.com/TabularisDB/tabularis-sqlserver-plugin/compare/main...HEAD

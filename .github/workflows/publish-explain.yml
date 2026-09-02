@@ -19,7 +19,8 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v5
         with:
-          node-version: "20"
+          # pnpm 11.23 requires Node 22.13 or newer.
+          node-version: "22.13"
           registry-url: "https://registry.npmjs.org"
 
       - name: Enable pnpm

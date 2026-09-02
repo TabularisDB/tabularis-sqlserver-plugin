@@ -9,6 +9,23 @@ Statements in §1 describe that baseline and include source anchors. The later
 sections are normative decisions for the implementation tasks; they do not
 claim that the code exists at the frozen commits.
 
+## Implementation status
+
+The contract is implemented on the release-candidate branches. Core PR
+[TabularisDB/tabularis#688](https://github.com/TabularisDB/tabularis/pull/688)
+contains the registry, raw plugin protocol, manifest plumbing, author guide and
+isolated desktop loader. This repository contains the TypeScript parser, ESM
+package, IIFE and raw Rust handoff; `.tabularium` requires Tabularis 0.23.0.
+The standalone site integration is in
+[TabularisDB/explain-plan#2](https://github.com/TabularisDB/explain-plan/pull/2).
+
+The cross-repository PRs are not merged, Tabularis 0.23.0 and
+`@tabularis/explain` 0.2.0 are not published, and the SQL Server npm package is
+not published. Those distribution prerequisites and the required real-desktop
+check are tracked in
+[issue #4](https://github.com/TabularisDB/tabularis-sqlserver-plugin/issues/4).
+This status note does not alter the frozen normative contract below.
+
 ## 1. Verified baseline
 
 The current split is real, but several details in the initial design needed

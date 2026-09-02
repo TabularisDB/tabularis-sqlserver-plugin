@@ -47,7 +47,8 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v5
         with:
-          node-version: "20"
+          # pnpm 11.23 requires Node 22.13 or newer.
+          node-version: "22.13"
 
       - name: Enable pnpm
         run: corepack enable
@@ -74,8 +75,36 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Validate against the live registry schema
-        run: npx --yes @tabularium/cli validate .tabularium --registry https://registry.tabularis.dev --kind driver
+      # The live schema does not yet include core PR #688's additive
+      # explain_parsers field. Keep every deployed field under the real
+      # validator and validate that one pending extension exactly until the
+      # schema deployment tracked in plugin issue #4.
+      - name: Validate deployed manifest fields against the live registry schema
+        run: |
+          jq 'del(.explain_parsers)' .tabularium > /tmp/sqlserver.tabularium
+          npx --yes @tabularium/cli validate /tmp/sqlserver.tabularium \
+            --registry https://registry.tabularis.dev --kind driver
+
+      - name: Validate pending EXPLAIN parser declaration
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          manifest = json.loads(Path(".tabularium").read_text())
+          parsers = manifest.get("explain_parsers")
+          assert isinstance(parsers, list) and parsers, "explain_parsers must be a non-empty array"
+          allowed = {"engine", "format", "label", "module"}
+          required = {"engine", "format", "module"}
+          for parser in parsers:
+              assert isinstance(parser, dict), "each explain parser must be an object"
+              assert not parser.keys() - allowed, "unknown explain parser property"
+              assert required <= parser.keys(), "missing required explain parser property"
+              for key in required:
+                  assert isinstance(parser[key], str) and parser[key].strip(), f"{key} must be a non-empty string"
+              if "label" in parser:
+                  assert isinstance(parser["label"], str) and parser["label"].strip(), "label must be a non-empty string"
+          PY
 
   live-db-integration:
     name: Live SQL Server integration
@@ -165,12 +194,12 @@ jobs:
           fi
 
           case "$TYPE" in
-            feat) CLASS=minor ;;
-            fix|refactor|perf) CLASS=patch ;;
-            docs|style|chore|test|ci|build) CLASS=none ;;
-            *) CLASS=none ;;
+            feat) CLASS="minor" ;;
+            fix|refactor|perf) CLASS="patch" ;;
+            docs|style|chore|test|ci|build) CLASS="none" ;;
+            *) CLASS="none" ;;
           esac
-          [ "$BREAKING" = true ] && CLASS=major
+          [ "$BREAKING" = true ] && CLASS="major"
 
           CHANNEL=$(echo "$PR_LABELS" | jq -r '[.[] | select(.name | startswith("prerelease:")) | .name][0] // ""' | sed 's/^prerelease://')
           if [ -z "$CHANNEL" ]; then
@@ -182,10 +211,12 @@ jobs:
             *) echo "::error::Unrecognized prerelease label value '$CHANNEL' — expected alpha, beta, rc, or stable."; exit 1 ;;
           esac
 
-          echo "type=$TYPE" >> "$GITHUB_OUTPUT"
-          echo "breaking=$BREAKING" >> "$GITHUB_OUTPUT"
-          echo "class=$CLASS" >> "$GITHUB_OUTPUT"
-          echo "channel=$CHANNEL" >> "$GITHUB_OUTPUT"
+          {
+            echo "type=$TYPE"
+            echo "breaking=$BREAKING"
+            echo "class=$CLASS"
+            echo "channel=$CHANNEL"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Resolve baseline version
         id: baseline

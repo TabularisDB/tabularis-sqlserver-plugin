@@ -1,12 +1,14 @@
 # SQL construction and identifier audit
 
-This audit covers `src/driver/` at `SS-040`. It classifies every production
-`format!` call that emits SQL or an SQL fragment. The audit found one unsafe
-API boundary: `build_insert_sql` accepted an already-rendered table target.
-It now accepts `schema` and `table` separately and applies `qualify` itself.
-The directly executed view, index, foreign-key, user, and login statements now
-also have pure builders so their quoting can be regression-tested without a
-database connection.
+This audit covers the release-candidate `src/driver/` tree and was refreshed
+during `SS-046`. It classifies every production `format!` call that emits SQL
+or an SQL fragment. The original audit found one unsafe API boundary:
+`build_insert_sql` accepted an already-rendered table target. It now accepts
+`schema` and `table` separately and applies `qualify` itself. The directly
+executed view, index, foreign-key, user, and login statements also have pure
+builders so their quoting can be regression-tested without a database
+connection. Later raw row-edit support is included below as an explicit SQL
+expression boundary rather than being mistaken for an ordinary value.
 
 ## Classification rules
 
@@ -34,16 +36,16 @@ encoding, and tests) is excluded.
 | `helpers.rs:62` | Multipart object reference | schema I via `bracket_quote`; object I via `bracket_quote` | Safe |
 | `helpers.rs:74` | Affected-row `SELECT` | expression K from two private constants; result alias I/K constant | Safe |
 | `helpers.rs:80` | DML plus row-count sentinel | sql S from query execution; sentinel K | Intentional SQL boundary |
-| `helpers.rs:114` | `@Pn` marker | ordinal K integer | Safe |
-| `helpers.rs:117` | `INSERT` | target I from `qualify`; columns I from `bracket_quote`; markers K | Safe after SS-040 API fix |
-| `helpers.rs:133` | Identity-insert batch | target I from `qualify`; insert and row-count select K built internally | Safe |
-| `helpers.rs:149` | Plain insert plus row-count select | insert and select K built internally | Safe |
-| `helpers.rs:231` | Primary-key predicate | column I via `bracket_quote`; ordinal K integer | Safe; values are bound |
-| `helpers.rs:245` | Composite-key `DELETE` | table I via `qualify`; predicate internally built | Safe; values are bound |
-| `helpers.rs:263` | Composite-key `UPDATE` | table I via `qualify`; column I via `bracket_quote`; predicate internally built | Safe; values are bound |
-| `helpers.rs:274` | Column definition head | column I via `bracket_quote`; data type S from the DDL editor/model | Intentional reviewed DDL source |
-| `helpers.rs:284` | Column default | default S from the DDL editor/model | Intentional reviewed DDL source |
-| `helpers.rs:346` | Paginated query | query S; optional order clause K; offset/fetch K integers | Intentional query boundary |
+| `helpers.rs:107` | `@Pn` marker | ordinal K integer | Safe |
+| `helpers.rs:128` | `INSERT` | target I from `qualify`; columns I from `bracket_quote`; expressions are bound-marker K or explicitly marked S | Safe identifiers; intentional raw row-edit boundary |
+| `helpers.rs:146` | Identity-insert batch | target I; insert may contain explicit S; row-count select K | Safe within documented raw boundary |
+| `helpers.rs:162` | Plain insert plus row-count select | insert may contain explicit S; select K | Safe within documented raw boundary |
+| `helpers.rs:274` | Primary-key predicate | column I via `bracket_quote`; ordinal K integer | Safe; values are bound |
+| `helpers.rs:288` | Composite-key `DELETE` | table I via `qualify`; predicate internally built | Safe; values are bound |
+| `helpers.rs:317` | Composite-key `UPDATE` | table and column I; value expression is bound-marker K or explicitly marked S | Safe within documented raw boundary |
+| `helpers.rs:327` | Column definition head | column I via `bracket_quote`; data type S from the DDL editor/model | Intentional reviewed DDL source |
+| `helpers.rs:337` | Column default | default S from the DDL editor/model | Intentional reviewed DDL source |
+| `helpers.rs:387` | Paginated query | query S; optional order clause K; offset/fetch K integers | Intentional query boundary |
 
 ### `ddl/mod.rs`
 
@@ -72,15 +74,16 @@ encoding, and tests) is excluded.
 
 | Source | SQL produced | Interpolations | Result |
 | --- | --- | --- | --- |
-| `ops.rs:116` | `CREATE VIEW` | view I via `qualify`; definition S from view editor | Intentional SQL-definition boundary |
-| `ops.rs:124` | `ALTER VIEW` | view I via `qualify`; definition S from view editor | Intentional SQL-definition boundary |
-| `ops.rs:128` | `DROP VIEW` | view I via `qualify` | Safe; executed directly |
-| `ops.rs:568` | Table primary-key clause | columns I, each already bracket-quoted | Safe |
-| `ops.rs:572` | `CREATE TABLE` | table I via `qualify`; definitions internally built | Safe identifiers; reviewed type/default source |
-| `ops.rs:584` | `ADD COLUMN` | table I via `qualify`; definition internally built | Safe identifiers; reviewed type/default source |
-| `ops.rs:616` | `CREATE INDEX` | uniqueness K boolean; index, table, columns I via quoting helpers | Safe; returned for review |
-| `ops.rs:640` | `DROP INDEX` | index I via `bracket_quote`; table I via `qualify` | Safe; executed directly |
-| `ops.rs:666` | Drop foreign-key constraint | table I via `qualify`; constraint I via `bracket_quote` | Safe; executed directly |
+| `ops.rs:117` | `CREATE VIEW` | view I via `qualify`; definition S from view editor | Intentional SQL-definition boundary |
+| `ops.rs:125` | `ALTER VIEW` | view I via `qualify`; definition S from view editor | Intentional SQL-definition boundary |
+| `ops.rs:129` | `DROP VIEW` | view I via `qualify` | Safe; executed directly |
+| `ops.rs:451` | Insert expression marker | ordinal K from the bound-parameter count | Safe |
+| `ops.rs:606` | Table primary-key clause | columns I, each already bracket-quoted | Safe |
+| `ops.rs:610` | `CREATE TABLE` | table I via `qualify`; definitions internally built | Safe identifiers; reviewed type/default source |
+| `ops.rs:622` | `ADD COLUMN` | table I via `qualify`; definition internally built | Safe identifiers; reviewed type/default source |
+| `ops.rs:654` | `CREATE INDEX` | uniqueness K boolean; index, table, columns I via quoting helpers | Safe; returned for review |
+| `ops.rs:678` | `DROP INDEX` | index I via `bracket_quote`; table I via `qualify` | Safe; executed directly |
+| `ops.rs:704` | Drop foreign-key constraint | table I via `qualify`; constraint I via `bracket_quote` | Safe; executed directly |
 
 ### `routines/mod.rs`
 
@@ -103,7 +106,7 @@ encoding, and tests) is excluded.
 | `routines/mod.rs:104` | Convert create definition to alter | definition S accepted only with the `CREATE` prefix | Intentional routine-editor boundary |
 | `routines/mod.rs:115` | Drop routine | object kind K from function/procedure branch; routine I via `qualify` | Safe; executed directly |
 
-`RoutineCallArg.is_raw` is the only argument-value bypass. `false` renders a
+`RoutineCallArg.is_raw` is the routine argument-value bypass. `false` renders a
 Unicode string literal with embedded quotes doubled; `None` renders fixed
 `NULL`. `true` preserves the value as an SQL expression so callers can enter
 values such as `SYSDATETIME()` or `DEFAULT`. This method returns editable SQL
@@ -170,8 +173,9 @@ SQL Server does not permit parameter markers in identifier positions.
 Complete SQL text is accepted only by APIs whose purpose is editing or running
 SQL: `execute_query`, batch execution, view definitions, trigger definitions,
 routine edit scripts, startup scripts, EXPLAIN's input query, column type and
-default expressions, and routine arguments explicitly marked `is_raw`. These
-boundaries do not weaken identifier handling elsewhere.
+default expressions, routine arguments explicitly marked `is_raw`, and row
+edits explicitly shaped as `{ "value": "<SQL expression>", "is_raw": true }`.
+These boundaries do not weaken identifier handling elsewhere.
 
 ## Regression coverage
 
