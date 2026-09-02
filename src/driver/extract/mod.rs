@@ -1,6 +1,6 @@
 //! Row-level value extraction for SQL Server.
 //!
-//! The dispatcher inspects the column's `ColumnType` (provided by tiberius)
+//! The dispatcher inspects the column's `ColumnType` (provided by the client)
 //! and calls `Row::try_get::<T, _>(idx)` with the right `T`. Conversions that
 //! need string formatting (dates, decimals, UUIDs, binary) are delegated to
 //! pure helpers in sibling modules so they stay unit-testable without a live
@@ -10,30 +10,49 @@ pub mod temporal;
 
 use crate::common::i64_to_json;
 use chrono::{DateTime, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime};
+use mssql_tds::datatypes::column_values::ColumnValues;
+use mssql_tds::datatypes::sql_json::SqlJson;
+use mssql_tds::datatypes::sql_vector::SqlVector;
+use mssql_tds::datatypes::sqldatatypes::TdsDataType;
+use mssql_tiberius_bridge::{ColumnType, Row};
 use rust_decimal::Decimal;
 use serde_json::Value;
-use tiberius::{numeric::Numeric, ColumnType, Row};
 use uuid::Uuid;
 
-/// Extract a single cell into the Tabularis wire-level `serde_json::Value`.
+/// Resolve wire types before dispatching extraction.
 ///
-/// Returns `Value::Null` for:
-/// - NULL SQL values
-/// - columns whose `ColumnType` is `Null` (untyped)
-/// - values that couldn't be decoded as any expected type
-///
-/// The function never panics; decoding errors log at debug level and fall
-/// back to `Value::Null` so one malformed row doesn't break the whole query.
-pub fn extract_value(row: &Row, idx: usize) -> Value {
-    let Some(col) = row.columns().get(idx) else {
-        return Value::Null;
-    };
-    let ct = col.column_type();
+/// The bridge's preview.3 normalizer handles nullable numeric widths but omits
+/// the fixed `smallmoney`, `char(n)`, and `binary(n)` wire variants. Keep those
+/// corrections local until the pinned bridge can be upgraded deliberately.
+pub fn normalized_column_type(tds_type: TdsDataType, byte_length: usize) -> ColumnType {
+    match tds_type {
+        TdsDataType::Money4 => ColumnType::Money4,
+        TdsDataType::BigChar => ColumnType::Char,
+        TdsDataType::BigBinary => ColumnType::Binary,
+        TdsDataType::DateTimeN if byte_length == 4 => ColumnType::Datetime4,
+        other => ColumnType::from_tds_with_length(other, byte_length),
+    }
+}
 
-    match ct {
+/// Extract a single cell using the type exposed by the bridge row.
+pub fn extract_value(row: &Row, idx: usize) -> Result<Value, String> {
+    let Some(column) = row.columns().get(idx) else {
+        return Ok(Value::Null);
+    };
+    extract_value_as(row, idx, column.column_type())
+}
+
+/// Extract a single cell using already-normalized result-set metadata.
+///
+/// Most decode mismatches retain the driver's historical `null` fallback.
+/// Exact numerics are different: silently replacing an out-of-range
+/// `decimal(38, s)` with null or an approximate float would corrupt data, so
+/// those conversions return an error that aborts the query result instead.
+pub fn extract_value_as(row: &Row, idx: usize, column_type: ColumnType) -> Result<Value, String> {
+    let value = match column_type {
         ColumnType::Null => Value::Null,
 
-        ColumnType::Bit | ColumnType::Bitn => read_bool(row, idx),
+        ColumnType::Bit => read_bool(row, idx),
 
         ColumnType::Int1 => match row.try_get::<u8, _>(idx) {
             Ok(Some(v)) => Value::from(v),
@@ -51,19 +70,18 @@ pub fn extract_value(row: &Row, idx: usize) -> Value {
             Ok(Some(v)) => i64_to_json(v),
             _ => Value::Null,
         },
-        ColumnType::Intn => read_intn(row, idx),
-
         ColumnType::Float4 => match row.try_get::<f32, _>(idx) {
             Ok(Some(v)) => f64_to_json(v as f64),
             _ => Value::Null,
         },
-        ColumnType::Float8 | ColumnType::Floatn => match row.try_get::<f64, _>(idx) {
+        ColumnType::Float8 => match row.try_get::<f64, _>(idx) {
             Ok(Some(v)) => f64_to_json(v),
             _ => Value::Null,
         },
 
-        ColumnType::Money | ColumnType::Money4 => read_numeric_as_string(row, idx),
-        ColumnType::Decimaln | ColumnType::Numericn => read_numeric_as_string(row, idx),
+        ColumnType::Money | ColumnType::Money4 | ColumnType::Decimaln | ColumnType::Numericn => {
+            return read_numeric_as_string(row, idx)
+        }
 
         ColumnType::Guid => match row.try_get::<Uuid, _>(idx) {
             Ok(Some(u)) => Value::String(u.to_string()),
@@ -71,7 +89,7 @@ pub fn extract_value(row: &Row, idx: usize) -> Value {
         },
 
         // Temporal
-        ColumnType::Datetime | ColumnType::Datetime4 | ColumnType::Datetimen => {
+        ColumnType::Datetime | ColumnType::Datetime4 => {
             match row.try_get::<NaiveDateTime, _>(idx) {
                 Ok(Some(v)) => Value::String(temporal::format_datetime(&v)),
                 _ => Value::Null,
@@ -81,15 +99,15 @@ pub fn extract_value(row: &Row, idx: usize) -> Value {
             Ok(Some(v)) => Value::String(temporal::format_datetime(&v)),
             _ => Value::Null,
         },
-        ColumnType::DatetimeOffsetn => match row.try_get::<DateTime<FixedOffset>, _>(idx) {
+        ColumnType::DatetimeOffset => match row.try_get::<DateTime<FixedOffset>, _>(idx) {
             Ok(Some(v)) => Value::String(temporal::format_datetime_offset(&v)),
             _ => Value::Null,
         },
-        ColumnType::Daten => match row.try_get::<NaiveDate, _>(idx) {
+        ColumnType::Date => match row.try_get::<NaiveDate, _>(idx) {
             Ok(Some(v)) => Value::String(temporal::format_date(&v)),
             _ => Value::Null,
         },
-        ColumnType::Timen => match row.try_get::<NaiveTime, _>(idx) {
+        ColumnType::Time => match row.try_get::<NaiveTime, _>(idx) {
             Ok(Some(v)) => Value::String(temporal::format_time(&v)),
             _ => Value::Null,
         },
@@ -97,20 +115,31 @@ pub fn extract_value(row: &Row, idx: usize) -> Value {
         // Strings
         ColumnType::Text
         | ColumnType::NText
-        | ColumnType::BigVarChar
-        | ColumnType::BigChar
+        | ColumnType::Varchar
+        | ColumnType::Char
         | ColumnType::NVarchar
         | ColumnType::NChar
         | ColumnType::Xml => read_string(row, idx),
 
+        ColumnType::Json => match row.raw_value(idx) {
+            Some(ColumnValues::Json(json)) => json_to_json(json)?,
+            _ => Value::Null,
+        },
+
         // Binary
-        ColumnType::Image | ColumnType::BigBinary | ColumnType::BigVarBin => {
+        ColumnType::Image | ColumnType::Binary | ColumnType::VarBinary | ColumnType::BigVarBin => {
             read_binary_as_base64(row, idx)
         }
 
-        // Fallbacks: SSVariant and UDT → best-effort string
-        ColumnType::SSVariant | ColumnType::Udt => read_string(row, idx),
-    }
+        ColumnType::Vector => match row.raw_value(idx) {
+            Some(ColumnValues::Vector(vector)) => vector_to_json(vector),
+            _ => Value::Null,
+        },
+
+        // sql_variant remains a best-effort textual fallback.
+        ColumnType::Ssvariant => read_string(row, idx),
+    };
+    Ok(value)
 }
 
 // --- Primitive readers ---------------------------------------------------
@@ -122,24 +151,6 @@ fn read_bool(row: &Row, idx: usize) -> Value {
     }
 }
 
-fn read_intn(row: &Row, idx: usize) -> Value {
-    // tiberius returns the "natural" Rust integer width based on the column
-    // length. Try widest to narrowest; the first successful decode wins.
-    if let Ok(Some(v)) = row.try_get::<i64, _>(idx) {
-        return i64_to_json(v);
-    }
-    if let Ok(Some(v)) = row.try_get::<i32, _>(idx) {
-        return Value::from(v);
-    }
-    if let Ok(Some(v)) = row.try_get::<i16, _>(idx) {
-        return Value::from(v);
-    }
-    if let Ok(Some(v)) = row.try_get::<u8, _>(idx) {
-        return Value::from(v);
-    }
-    Value::Null
-}
-
 fn read_string(row: &Row, idx: usize) -> Value {
     match row.try_get::<&str, _>(idx) {
         Ok(Some(s)) => Value::String(s.to_string()),
@@ -147,20 +158,56 @@ fn read_string(row: &Row, idx: usize) -> Value {
     }
 }
 
-fn read_numeric_as_string(row: &Row, idx: usize) -> Value {
-    // Prefer `rust_decimal::Decimal` (exact) when the feature exposes it;
-    // fall back to tiberius' own `Numeric` (lossless integer + scale) for
-    // values outside rust_decimal's 96-bit range (NUMERIC(38, ...)).
-    if let Ok(Some(d)) = row.try_get::<Decimal, _>(idx) {
-        return Value::String(normalize_decimal_string(&d.to_string()));
-    }
-    if let Ok(Some(n)) = row.try_get::<Numeric, _>(idx) {
-        return Value::String(normalize_decimal_string(&n.to_string()));
-    }
-    if let Ok(Some(f)) = row.try_get::<f64, _>(idx) {
-        return f64_to_json(f);
-    }
-    Value::Null
+fn read_numeric_as_string(row: &Row, idx: usize) -> Result<Value, String> {
+    let value = row
+        .raw_value(idx)
+        .ok_or_else(|| format!("SQL Server numeric column index {idx} is out of bounds"))?;
+    numeric_value_to_json(value)
+}
+
+fn numeric_value_to_json(value: &ColumnValues) -> Result<Value, String> {
+    let decimal = match value {
+        ColumnValues::Null => return Ok(Value::Null),
+        ColumnValues::Decimal(parts) | ColumnValues::Numeric(parts) => {
+            let raw = parts.to_string();
+            raw.parse::<Decimal>().map_err(|error| {
+                format!(
+                    "SQL Server decimal({}, {}) value {raw} exceeds rust_decimal's exact range: {error}",
+                    parts.precision, parts.scale
+                )
+            })?
+        }
+        ColumnValues::SmallMoney(money) => Decimal::new(i64::from(money.int_val), 4),
+        ColumnValues::Money(money) => {
+            let raw = (i64::from(money.msb_part) << 32) | i64::from(money.lsb_part as u32);
+            Decimal::new(raw, 4)
+        }
+        other => {
+            return Err(format!(
+                "SQL Server returned a non-numeric value for an exact numeric column: {other:?}"
+            ))
+        }
+    };
+    Ok(Value::String(normalize_decimal_string(
+        &decimal.to_string(),
+    )))
+}
+
+fn json_to_json(json: &SqlJson) -> Result<Value, String> {
+    String::from_utf8(json.bytes.clone())
+        .map(Value::String)
+        .map_err(|error| format!("SQL Server returned invalid UTF-8 for a JSON column: {error}"))
+}
+
+fn vector_to_json(vector: &SqlVector) -> Value {
+    Value::Array(
+        vector
+            .as_f32()
+            .unwrap_or_default()
+            .iter()
+            .map(|dimension| f64_to_json(f64::from(*dimension)))
+            .collect(),
+    )
 }
 
 fn read_binary_as_base64(row: &Row, idx: usize) -> Value {

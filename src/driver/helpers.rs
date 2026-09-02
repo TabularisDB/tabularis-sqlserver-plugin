@@ -1,6 +1,6 @@
 //! Pure SQL Server identifier / literal helpers and parameter-binding adapters.
 //!
-//! The string utilities are deliberately kept free of any tiberius or async
+//! The string utilities are deliberately kept free of any client or async
 //! dependency so they can be unit-tested trivially and reused by multiple
 //! modules (introspection, DDL, explain).
 
@@ -62,6 +62,24 @@ pub fn qualify(schema: Option<&str>, object: &str) -> String {
     format!("{}.{}", bracket_quote(schema), bracket_quote(object))
 }
 
+/// Result-set column used to carry `@@ROWCOUNT` back to the driver for DML
+/// statements. The TDS client reports rows *returned*, not rows *affected*,
+/// so every DML batch captures the count itself and selects it as the final
+/// result set under this name.
+pub const AFFECTED_ROWS_COLUMN: &str = "__tabularis_affected_rows";
+
+/// The trailing `SELECT` that surfaces `@@ROWCOUNT` (or a variable holding
+/// it) as the batch's final single-cell result set.
+fn select_affected_rows(expression: &str) -> String {
+    format!("SELECT CAST({expression} AS BIGINT) AS [{AFFECTED_ROWS_COLUMN}];")
+}
+
+/// Append the `@@ROWCOUNT` capture to a single-statement DML so the affected
+/// count comes back as a final result set (see [`AFFECTED_ROWS_COLUMN`]).
+pub fn wrap_dml_with_rowcount(sql: &str) -> String {
+    format!("{sql}\n; {}", select_affected_rows("@@ROWCOUNT"))
+}
+
 /// Build a parameterized SQL Server `INSERT` statement.
 ///
 /// `qualified` is expected to already be a `[schema].[table]` produced by
@@ -74,6 +92,11 @@ pub fn qualify(schema: Option<&str>, object: &str) -> String {
 /// even if the insert fails. `target` should also be a `[schema].[table]`
 /// reference (typically the same as `qualified`); accepting it as a parameter
 /// keeps the helper pure and easy to unit-test.
+///
+/// The batch always ends by selecting the insert's `@@ROWCOUNT` as
+/// [`AFFECTED_ROWS_COLUMN`]. In the identity-wrapped variant the count is
+/// captured into a variable right after the `INSERT` — `SET IDENTITY_INSERT`
+/// resets `@@ROWCOUNT`, so it cannot be read at the end of the batch.
 ///
 /// Returns the SQL batch. The number of placeholders always matches
 /// `columns.len()`.
@@ -97,35 +120,41 @@ pub fn build_insert_sql(
     );
 
     match wrap_identity_insert {
-        None => format!("{};", insert),
+        None => format!("{};\n{}", insert, select_affected_rows("@@ROWCOUNT")),
         Some(target) => {
-            // SET IDENTITY_INSERT is session-scoped and is *not* reverted by
-            // ROLLBACK, so the CATCH block must explicitly turn it OFF before
-            // re-raising. Setting OFF on a table that is already OFF is a
-            // no-op in SQL Server, so this is safe even if the failure occurs
-            // before the ON statement executes.
+            // SET IDENTITY_INSERT is session-scoped and is *not* transactional,
+            // so the CATCH block must explicitly turn it OFF before re-raising.
+            // Setting OFF on a table that is already OFF is a no-op in SQL
+            // Server, so this is safe even if the failure occurs before the ON
+            // statement executes. The success and CATCH paths both turn it
+            // OFF; SS-003 verifies a failed insert does not poison the reused
+            // pooled session. No explicit transaction is needed — a single
+            // INSERT is atomic on its own, and the TDS client rejects
+            // BEGIN TRAN / COMMIT inside an `sp_executesql` RPC batch
+            // (error 3981).
             format!(
-                "BEGIN TRY\n\
-                     BEGIN TRAN;\n\
+                "DECLARE @tabularis_affected BIGINT = 0;\n\
+                 BEGIN TRY\n\
                      SET IDENTITY_INSERT {target} ON;\n\
                      {insert};\n\
+                     SET @tabularis_affected = @@ROWCOUNT;\n\
                      SET IDENTITY_INSERT {target} OFF;\n\
-                     COMMIT TRAN;\n\
                  END TRY\n\
                  BEGIN CATCH\n\
-                     IF @@TRANCOUNT > 0 ROLLBACK TRAN;\n\
                      SET IDENTITY_INSERT {target} OFF;\n\
                      THROW;\n\
-                 END CATCH;",
+                 END CATCH;\n\
+                 {select}",
                 target = target,
                 insert = insert,
+                select = select_affected_rows("@tabularis_affected"),
             )
         }
     }
 }
 
 /// Escape a single-quoted string literal by doubling embedded single quotes.
-/// **Do not use this for parameterised values** — prefer tiberius parameter
+/// **Do not use this for parameterised values** — prefer positional parameter
 /// binding (`@P1` / `conn.query(sql, &[&value])`). This helper is only for
 /// metadata queries where the value is also the searchable key (e.g. when
 /// embedding a schema name into a diagnostic comment).
@@ -133,10 +162,10 @@ pub fn escape_single_quoted(value: &str) -> String {
     value.replace('\'', "''")
 }
 
-/// Map a [`serde_json::Value`] to a Tiberius parameter with the corresponding
+/// Map a [`serde_json::Value`] to a SQL parameter with the corresponding
 /// SQL Server type instead of coercing every value through a string.
 ///
-/// This helper dispatches on the JSON variant and hands Tiberius a
+/// This helper dispatches on the JSON variant and hands the client a
 /// natively-typed primitive, leaning on its existing
 /// `ToSql for bool / i64 / f64 / String / Option<T>` implementations:
 ///
@@ -151,7 +180,9 @@ pub fn escape_single_quoted(value: &str) -> String {
 /// site: the caller collects owned boxes once, then borrows from them when
 /// building the `&[&dyn ToSql]` slice required by `Client::execute` /
 /// `Client::query`.
-pub fn value_to_sql_param(value: &serde_json::Value) -> Result<Box<dyn tiberius::ToSql>, String> {
+pub fn value_to_sql_param(
+    value: &serde_json::Value,
+) -> Result<Box<dyn mssql_tiberius_bridge::ToSql>, String> {
     match value {
         serde_json::Value::Null => Ok(Box::new(None::<String>)),
         serde_json::Value::Bool(value) => Ok(Box::new(*value)),
@@ -165,7 +196,7 @@ pub fn value_to_sql_param(value: &serde_json::Value) -> Result<Box<dyn tiberius:
             } else {
                 number
                     .as_f64()
-                    .map(|value| Box::new(value) as Box<dyn tiberius::ToSql>)
+                    .map(|value| Box::new(value) as Box<dyn mssql_tiberius_bridge::ToSql>)
                     .ok_or_else(|| format!("Invalid SQL Server numeric value: {number}"))
             }
         }
@@ -180,7 +211,7 @@ pub fn value_to_sql_param(value: &serde_json::Value) -> Result<Box<dyn tiberius:
 ///
 /// `pk_cols` are bracket-quoted; each column is bound to an ordinal marker
 /// starting at `@P{start_marker}`. The caller passes the matching values to
-/// tiberius `.query()` in the same order, ensuring `@Pn` lines up positionally.
+/// `.query()` in the same order, ensuring `@Pn` lines up positionally.
 ///
 /// Returns `None` when `pk_cols` is empty — callers must treat this as a
 /// programmer error (no PK to identify a row by).

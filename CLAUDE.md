@@ -39,9 +39,9 @@ src/
   handlers/         # thin JSON adapters, one module per RPC area
   driver/           # SQL Server logic
     ops.rs          # one free function per host RPC method
-    pool.rs         # tiberius Config + deadpool Manager (TLS modes, startup scripts)
+    pool.rs         # Microsoft mssql-tds client via bridge + deadpool Manager (TLS modes, startup scripts)
     introspection.rs, helpers.rs, ddl/, routines/, triggers/, types.rs, version.rs
-    extract/        # tiberius row → JSON value extraction (incl. temporal types)
+    extract/        # row → JSON value extraction (incl. temporal types)
     explain.rs      # SHOWPLAN_XML / STATISTICS XML capture
     showplan.rs     # SHOWPLAN XML → visual-plan JSON (plugins return parsed plans)
 ```

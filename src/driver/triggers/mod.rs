@@ -30,9 +30,7 @@ pub async fn get_triggers(
         .query(LIST_TRIGGERS, &[&schema])
         .await
         .map_err(|error| error.to_string())?
-        .into_first_result()
-        .await
-        .map_err(|error| error.to_string())?;
+        .into_first_result();
 
     Ok(rows
         .into_iter()

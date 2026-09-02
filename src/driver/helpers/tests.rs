@@ -84,8 +84,19 @@ fn build_insert_sql_plain_emits_positional_placeholders() {
     );
     assert_eq!(
         sql,
-        "INSERT INTO [dbo].[Users] ([id], [name], [email]) VALUES (@P1, @P2, @P3);"
+        "INSERT INTO [dbo].[Users] ([id], [name], [email]) VALUES (@P1, @P2, @P3);\n\
+         SELECT CAST(@@ROWCOUNT AS BIGINT) AS [__tabularis_affected_rows];"
     );
+}
+
+#[test]
+fn wrap_dml_with_rowcount_keeps_multi_statement_batch_and_single_sentinel() {
+    let batch = "SET NOCOUNT ON; SELECT 1; UPDATE [dbo].[Users] SET [active] = 1";
+    let sql = wrap_dml_with_rowcount(batch);
+
+    assert!(sql.starts_with(batch));
+    assert_eq!(sql.matches(AFFECTED_ROWS_COLUMN).count(), 1);
+    assert!(sql.ends_with("SELECT CAST(@@ROWCOUNT AS BIGINT) AS [__tabularis_affected_rows];"));
 }
 
 #[test]
@@ -107,20 +118,31 @@ fn build_insert_sql_with_identity_wraps_in_try_catch() {
         Some("[dbo].[Users]"),
     );
     assert!(sql.contains("BEGIN TRY"));
-    assert!(sql.contains("BEGIN TRAN;"));
     assert!(sql.contains("SET IDENTITY_INSERT [dbo].[Users] ON;"));
     assert!(sql.contains("INSERT INTO [dbo].[Users] ([id], [name]) VALUES (@P1, @P2);"));
     assert!(sql.contains("SET IDENTITY_INSERT [dbo].[Users] OFF;"));
-    assert!(sql.contains("COMMIT TRAN;"));
     assert!(sql.contains("BEGIN CATCH"));
-    assert!(sql.contains("IF @@TRANCOUNT > 0 ROLLBACK TRAN;"));
     assert!(sql.contains("THROW;"));
+    // No BEGIN TRAN/COMMIT: the TDS client rejects transaction statements
+    // inside an sp_executesql RPC batch (error 3981), and a single INSERT
+    // is atomic without one.
+    assert!(!sql.contains("TRAN"));
     // The OFF guard must appear both on success and in CATCH so the
     // session-scoped setting cannot leak when an insert fails.
     let off_count = sql
         .matches("SET IDENTITY_INSERT [dbo].[Users] OFF;")
         .count();
     assert_eq!(off_count, 2);
+    // @@ROWCOUNT must be captured immediately after the INSERT (the later
+    // SET IDENTITY_INSERT resets it) and selected at the end of the batch.
+    assert!(sql.contains(
+        "INSERT INTO [dbo].[Users] ([id], [name]) VALUES (@P1, @P2);\n\
+         SET @tabularis_affected = @@ROWCOUNT;\n\
+         SET IDENTITY_INSERT [dbo].[Users] OFF;"
+    ));
+    assert!(
+        sql.contains("SELECT CAST(@tabularis_affected AS BIGINT) AS [__tabularis_affected_rows];")
+    );
 }
 
 #[test]
@@ -153,9 +175,7 @@ fn value_to_sql_param_accepts_supported_json_variants() {
 #[test]
 fn value_to_sql_param_rejects_unsigned_bigint_overflow() {
     let value = serde_json::json!(u64::MAX);
-    let error = value_to_sql_param(&value)
-        .err()
-        .expect("overflow must be rejected");
+    let error = value_to_sql_param(&value).expect_err("overflow must be rejected");
     assert!(error.contains("BIGINT range"));
 }
 
@@ -330,7 +350,16 @@ fn result_set_classification_ignores_literals_comments_and_identifiers() {
 fn affected_rows_are_only_reported_for_final_dml_statement() {
     assert!(query_reports_affected_rows("UPDATE users SET active = 1"));
     assert!(query_reports_affected_rows(
+        "UPDATE users SET active = 1 OUTPUT INSERTED.id"
+    ));
+    assert!(query_reports_affected_rows(
+        "SELECT 1; UPDATE users SET active = 1"
+    ));
+    assert!(query_reports_affected_rows(
         "SET NOCOUNT ON; WITH target AS (SELECT id FROM users) DELETE FROM target"
+    ));
+    assert!(!query_reports_affected_rows(
+        "UPDATE users SET active = 1; SELECT 1"
     ));
     assert!(!query_reports_affected_rows(
         "CREATE PROCEDURE dbo.p AS SELECT 1"

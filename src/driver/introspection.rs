@@ -2,10 +2,10 @@
 //!
 //! The SQL strings are exposed as `pub const` so they can be asserted on in
 //! unit tests (clean-room, no smoke-testing against a live server at compile
-//! time). Async helpers execute each query via tiberius and normalise the
+//! time). Async helpers execute each query via the bridge client and normalise the
 //! result into the public Tabularis models (`TableInfo`, `TableColumn`, ...).
 //!
-//! All queries qualify objects with `@P1` / `@P2` tiberius parameter markers;
+//! All queries qualify objects with `@P1` / `@P2` positional parameter markers;
 //! we never interpolate user input.
 
 use crate::driver::helpers::qualify;
@@ -438,19 +438,19 @@ pub fn is_string_type(data_type: &str) -> bool {
 
 // --- Async query helpers --------------------------------------------------
 
-fn row_str(row: &tiberius::Row, col: &str) -> String {
+fn row_str(row: &mssql_tiberius_bridge::Row, col: &str) -> String {
     row.get::<&str, _>(col).unwrap_or("").to_string()
 }
 
-fn row_str_opt(row: &tiberius::Row, col: &str) -> Option<String> {
+fn row_str_opt(row: &mssql_tiberius_bridge::Row, col: &str) -> Option<String> {
     row.get::<&str, _>(col).map(|s| s.to_string())
 }
 
-fn row_bool(row: &tiberius::Row, col: &str) -> bool {
+fn row_bool(row: &mssql_tiberius_bridge::Row, col: &str) -> bool {
     row.get::<bool, _>(col).unwrap_or(false)
 }
 
-fn row_i32(row: &tiberius::Row, col: &str) -> i32 {
+fn row_i32(row: &mssql_tiberius_bridge::Row, col: &str) -> i32 {
     row.get::<i32, _>(col).unwrap_or(0)
 }
 
@@ -462,9 +462,7 @@ pub async fn get_tables(
         .query(Q_GET_TABLES, &[&schema])
         .await
         .map_err(|e| e.to_string())?
-        .into_first_result()
-        .await
-        .map_err(|error| error.to_string())?;
+        .into_first_result();
 
     Ok(rows
         .into_iter()
@@ -486,9 +484,7 @@ pub async fn get_columns(
         .query(Q_GET_COLUMNS, &[&qualified])
         .await
         .map_err(|e| e.to_string())?
-        .into_first_result()
-        .await
-        .map_err(|error| error.to_string())?;
+        .into_first_result();
 
     Ok(rows
         .into_iter()
@@ -522,9 +518,7 @@ pub async fn detect_identity_column(
         .query(Q_GET_IDENTITY_COLUMN, &[&qualified])
         .await
         .map_err(|e| e.to_string())?
-        .into_first_result()
-        .await
-        .map_err(|error| error.to_string())?;
+        .into_first_result();
 
     Ok(rows
         .into_iter()
@@ -555,9 +549,7 @@ pub async fn get_foreign_keys(
         .query(query, &[&schema, &table])
         .await
         .map_err(|e| e.to_string())?
-        .into_first_result()
-        .await
-        .map_err(|error| error.to_string())?;
+        .into_first_result();
 
     Ok(rows
         .into_iter()
@@ -583,9 +575,7 @@ pub async fn get_all_columns_batch(
         .query(Q_GET_ALL_COLUMNS_BATCH, &[&schema])
         .await
         .map_err(|e| e.to_string())?
-        .into_first_result()
-        .await
-        .map_err(|error| error.to_string())?;
+        .into_first_result();
 
     let mut out: HashMap<String, Vec<TableColumn>> = HashMap::new();
     for r in rows {
@@ -618,9 +608,7 @@ pub async fn get_all_foreign_keys_batch(
         .query(query, &[&schema])
         .await
         .map_err(|e| e.to_string())?
-        .into_first_result()
-        .await
-        .map_err(|error| error.to_string())?;
+        .into_first_result();
 
     let mut out: HashMap<String, Vec<ForeignKey>> = HashMap::new();
     for r in rows {
@@ -657,7 +645,8 @@ pub async fn detect_server_version(
         )
         .await
     {
-        if let Ok(rows) = result.into_first_result().await {
+        {
+            let rows = result.into_first_result();
             if let Some(r) = rows.first() {
                 let raw = row_str(r, "v");
                 if !raw.trim().is_empty() {
@@ -670,7 +659,8 @@ pub async fn detect_server_version(
 
     // Fall back to @@VERSION banner.
     if let Ok(result) = conn.query("SELECT @@VERSION AS v", &[]).await {
-        if let Ok(rows) = result.into_first_result().await {
+        {
+            let rows = result.into_first_result();
             if let Some(r) = rows.first() {
                 let raw = row_str(r, "v");
                 if !raw.trim().is_empty() {
@@ -713,9 +703,7 @@ pub async fn get_views(conn: &mut BridgeConnection, schema: &str) -> Result<Vec<
         .query(Q_GET_VIEWS, &[&schema])
         .await
         .map_err(|e| e.to_string())?
-        .into_first_result()
-        .await
-        .map_err(|error| error.to_string())?;
+        .into_first_result();
 
     Ok(rows
         .into_iter()
@@ -739,9 +727,7 @@ pub async fn get_module_definition(
         .query(Q_GET_MODULE_DEFINITION, &[&qualified])
         .await
         .map_err(|e| e.to_string())?
-        .into_first_result()
-        .await
-        .map_err(|error| error.to_string())?;
+        .into_first_result();
 
     rows.into_iter()
         .next()
@@ -757,9 +743,7 @@ pub async fn get_routines(
         .query(Q_GET_ROUTINES, &[&schema])
         .await
         .map_err(|e| e.to_string())?
-        .into_first_result()
-        .await
-        .map_err(|error| error.to_string())?;
+        .into_first_result();
 
     Ok(rows
         .into_iter()
@@ -789,9 +773,7 @@ pub async fn is_table_valued_function(
         )
         .await
         .map_err(|error| error.to_string())?
-        .into_first_result()
-        .await
-        .map_err(|error| error.to_string())?;
+        .into_first_result();
     Ok(rows
         .first()
         .and_then(|row| row.get::<bool, _>(0))
@@ -807,9 +789,7 @@ pub async fn get_routine_parameters(
         .query(Q_GET_ROUTINE_PARAMETERS, &[&schema, &routine_name])
         .await
         .map_err(|e| e.to_string())?
-        .into_first_result()
-        .await
-        .map_err(|error| error.to_string())?;
+        .into_first_result();
 
     Ok(rows
         .into_iter()
@@ -832,9 +812,7 @@ pub async fn get_indexes(
         .query(Q_GET_INDEXES, &[&qualified])
         .await
         .map_err(|e| e.to_string())?
-        .into_first_result()
-        .await
-        .map_err(|error| error.to_string())?;
+        .into_first_result();
 
     Ok(rows
         .into_iter()

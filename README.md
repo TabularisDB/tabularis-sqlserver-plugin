@@ -15,7 +15,9 @@
 
 A [Microsoft SQL Server](https://www.microsoft.com/sql-server) plugin for [Tabularis](https://github.com/TabularisDB/tabularis), the lightweight database management tool.
 
-This plugin enables Tabularis to connect to SQL Server instances, providing schema introspection, query execution, full CRUD, DDL, trigger and stored-routine management, and visual execution plans through a JSON-RPC 2.0 over stdio interface. It is written in Rust on top of [`tiberius`](https://crates.io/crates/tiberius) with [`deadpool`](https://crates.io/crates/deadpool) connection pooling.
+This plugin enables Tabularis to connect to SQL Server instances, providing schema introspection, query execution, full CRUD, DDL, trigger and stored-routine management, and visual execution plans through a JSON-RPC 2.0 over stdio interface. It is written in Rust on top of Microsoft's [`mssql-tds`](https://github.com/microsoft/mssql-rust) protocol implementation (via [`mssql-tiberius-bridge`](https://crates.io/crates/mssql-tiberius-bridge)) with [`deadpool`](https://crates.io/crates/deadpool) connection pooling.
+
+The client was swapped to Microsoft's protocol implementation to align the plugin with the actively developed upstream SQL Server stack while the bridge preserves the API the driver uses. This is an internal transport change: connection settings and user-facing behaviour are unchanged, and existing users do not need to migrate anything.
 
 **Discord** - [Join our discord server](https://discord.com/invite/K2hmhfHRSt) and chat with the maintainers.
 
@@ -33,7 +35,7 @@ This plugin enables Tabularis to connect to SQL Server instances, providing sche
 
 ## Features
 
-- Stable `tiberius` + `deadpool` connection pooling with session reset (`sp_reset_connection`), startup scripts, and pool lifecycle handling
+- Microsoft's `mssql-tds` protocol implementation through `mssql-tiberius-bridge`, with `deadpool` connection pooling, session reset (`sp_reset_connection`), startup scripts, and pool lifecycle handling
 - Schema, table, column, PK/FK, index, view, routine, and trigger introspection
 - Query execution with pagination, CTE/DML classification, multiple result sets, and session-preserving batches
 - Accurate affected rows, including multi-statement DML and DML `OUTPUT`

@@ -21,36 +21,32 @@ pub async fn explain_showplan_xml(
     conn.simple_query(format!("SET {option} ON"))
         .await
         .map_err(|error| error.to_string())?
-        .into_results()
-        .await
-        .map_err(|error| error.to_string())?;
+        .into_results();
 
-    let query_result = match conn.simple_query(query).await {
-        Ok(stream) => stream
-            .into_results()
-            .await
-            .map_err(|error| error.to_string()),
-        Err(error) => Err(error.to_string()),
-    };
+    let query_result = conn
+        .simple_query(query)
+        .await
+        .map(|result| result.into_results())
+        .map_err(|error| error.to_string());
     let disable_result = conn
         .simple_query(format!("SET {option} OFF"))
         .await
-        .map_err(|error| error.to_string())?
-        .into_results()
-        .await
-        .map_err(|error| error.to_string());
+        .map_err(|error| error.to_string())
+        .map(|result| {
+            result.into_results();
+        });
 
     let result_sets = query_result?;
     disable_result?;
-    result_sets
-        .iter()
-        .flat_map(|rows| rows.iter())
-        .flat_map(|row| (0..row.columns().len()).map(move |index| extract_value(row, index)))
-        .find_map(|value| {
-            value
-                .as_str()
-                .filter(|text| text.contains("ShowPlanXML"))
-                .map(str::to_string)
-        })
-        .ok_or_else(|| "SQL Server did not return a SHOWPLAN_XML document".to_string())
+    for rows in &result_sets {
+        for row in rows {
+            for index in 0..row.columns().len() {
+                let value = extract_value(row, index)?;
+                if let Some(xml) = value.as_str().filter(|text| text.contains("ShowPlanXML")) {
+                    return Ok(xml.to_string());
+                }
+            }
+        }
+    }
+    Err("SQL Server did not return a SHOWPLAN_XML document".to_string())
 }
