@@ -270,7 +270,8 @@ remaining pools.
 ### Prerequisites
 
 - Rust (stable, see `rust-toolchain.toml`)
-- [`just`](https://github.com/casey/just) (optional, wraps the common cargo invocations)
+- Node.js 20 or newer and pnpm for the bundled Visual EXPLAIN parser
+- [`just`](https://github.com/casey/just) (optional, wraps the common build and test commands)
 
 ### Build
 
@@ -294,6 +295,7 @@ Unit tests need no database:
 
 ```bash
 just test
+just test-explain
 just lint
 just fmt
 ```

@@ -59,6 +59,14 @@
   },
   "kind": "driver",
   "engine": "sqlserver",
+  "explain_parsers": [
+    {
+      "engine": "sqlserver",
+      "format": "sqlserver-showplan-xml",
+      "label": "SQL Server SHOWPLAN XML",
+      "module": "explain/dist/index.iife.js"
+    }
+  ],
   "paradigms": ["relational"],
   "default_port": 1433,
   "default_username": "sa",

@@ -1,0 +1,54 @@
+name: Publish EXPLAIN parser
+
+on:
+  push:
+    tags:
+      - "explain-v*"
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    name: Publish npm package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Enable pnpm
+        run: corepack enable
+
+      - name: Check tag matches package and plugin versions
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#explain-v}"
+          PACKAGE_VERSION=$(jq -r .version explain/package.json)
+          PLUGIN_VERSION=$(jq -r .version .tabularium)
+          if [ "$TAG_VERSION" != "$PACKAGE_VERSION" ]; then
+            echo "::error::Tag version ($TAG_VERSION) does not match explain/package.json ($PACKAGE_VERSION)"
+            exit 1
+          fi
+          if [ "$PACKAGE_VERSION" != "$PLUGIN_VERSION" ]; then
+            echo "::error::EXPLAIN package version ($PACKAGE_VERSION) does not match plugin version ($PLUGIN_VERSION)"
+            exit 1
+          fi
+
+      - name: Install, typecheck, test and build
+        working-directory: explain
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm typecheck
+          pnpm test
+          pnpm build
+
+      - name: Publish
+        working-directory: explain
+        run: pnpm publish --access public --provenance --no-git-checks
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

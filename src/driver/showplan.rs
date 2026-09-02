@@ -237,4 +237,29 @@ mod tests {
         let err = parse_showplan_xml("<ShowPlanXML/>", "").unwrap_err();
         assert!(err.contains("RelOp"));
     }
+
+    /// Regenerate the TypeScript port's committed golden files with the Rust
+    /// parser that they must match until SS-035 removes this implementation.
+    #[test]
+    #[ignore = "writes committed explain fixture expectations"]
+    fn write_showplan_fixture_goldens() {
+        let fixture_dir =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("explain/tests/fixtures");
+        let expected_dir = fixture_dir.join("expected");
+        std::fs::create_dir_all(&expected_dir).unwrap();
+
+        for entry in std::fs::read_dir(&fixture_dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.extension().and_then(|extension| extension.to_str()) != Some("xml") {
+                continue;
+            }
+
+            let xml = std::fs::read_to_string(&path).unwrap();
+            let plan = parse_showplan_xml(&xml, "").unwrap();
+            let mut json = serde_json::to_string_pretty(&plan).unwrap();
+            json.push('\n');
+            let name = path.file_stem().unwrap();
+            std::fs::write(expected_dir.join(name).with_extension("json"), json).unwrap();
+        }
+    }
 }

@@ -99,13 +99,18 @@ jobs:
           npm install --no-audit --no-fund
           npm run build
 
+      - name: Enable pnpm
+        if: steps.explain.outputs.present == 'true'
+        shell: bash
+        run: corepack enable
+
       - name: Build EXPLAIN parser
         if: steps.explain.outputs.present == 'true'
         shell: bash
         working-directory: explain
         run: |
-          npm install --no-audit --no-fund
-          npm run build
+          pnpm install --frozen-lockfile
+          pnpm run build
 
       - name: Install cross (linux-arm64 only)
         if: matrix.cross
@@ -133,9 +138,9 @@ jobs:
             mkdir -p "$STAGE/ui/dist"
             cp ui/dist/index.js "$STAGE/ui/dist/"
           fi
-          if [ -f explain/dist/index.js ]; then
+          if [ -f explain/dist/index.iife.js ]; then
             mkdir -p "$STAGE/explain/dist"
-            cp explain/dist/index.js "$STAGE/explain/dist/"
+            cp explain/dist/index.iife.js "$STAGE/explain/dist/"
           fi
           (cd "$STAGE" && zip -r ../sqlserver-plugin-${{ matrix.platform-label }}.zip .)
 
@@ -154,9 +159,9 @@ jobs:
             New-Item -ItemType Directory -Force -Path "$stage\ui\dist" | Out-Null
             Copy-Item "ui\dist\index.js" "$stage\ui\dist"
           }
-          if (Test-Path "explain\dist\index.js") {
+          if (Test-Path "explain\dist\index.iife.js") {
             New-Item -ItemType Directory -Force -Path "$stage\explain\dist" | Out-Null
-            Copy-Item "explain\dist\index.js" "$stage\explain\dist"
+            Copy-Item "explain\dist\index.iife.js" "$stage\explain\dist"
           }
           Compress-Archive -Path "$stage\*" -DestinationPath "sqlserver-plugin-${{ matrix.platform-label }}.zip"
 

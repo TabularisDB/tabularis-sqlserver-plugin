@@ -25,16 +25,26 @@ seed-sqlserver:
          END"
 
 # ---------------------------------------------------------------------------
-# Cross-platform recipes (only shell-agnostic tooling — cargo, npm).
+# Cross-platform recipes (only shell-agnostic tooling — cargo, npm, pnpm).
 # ---------------------------------------------------------------------------
 
-# Build the plugin binary in debug mode (plus UI if present).
-build: build-ui
+# Build the plugin binary and its optional JavaScript artifacts.
+build: build-ui build-explain
     cargo build
 
 # Build for release (what the GitHub Actions workflow ships).
-release: build-ui
+release: build-ui build-explain
     cargo build --release
+
+# Build and test the browser-safe SQL Server SHOWPLAN parser package.
+build-explain:
+    pnpm --dir explain install --frozen-lockfile
+    pnpm --dir explain build
+
+test-explain:
+    pnpm --dir explain install --frozen-lockfile
+    pnpm --dir explain typecheck
+    pnpm --dir explain test
 
 # Run unit tests only. This crate is binary-only, so --lib would fail; --bins
 # also keeps tests/live_db.rs out of the default run.
@@ -99,9 +109,9 @@ dev-install: build
         mkdir -p "${XDG_DATA_HOME:-$HOME/.local/share}/tabularis/plugins/sqlserver/ui/dist"; \
         cp ui/dist/index.js "${XDG_DATA_HOME:-$HOME/.local/share}/tabularis/plugins/sqlserver/ui/dist/"; \
     fi
-    @if [ -f explain/dist/index.js ]; then \
+    @if [ -f explain/dist/index.iife.js ]; then \
         mkdir -p "${XDG_DATA_HOME:-$HOME/.local/share}/tabularis/plugins/sqlserver/explain/dist"; \
-        cp explain/dist/index.js "${XDG_DATA_HOME:-$HOME/.local/share}/tabularis/plugins/sqlserver/explain/dist/"; \
+        cp explain/dist/index.iife.js "${XDG_DATA_HOME:-$HOME/.local/share}/tabularis/plugins/sqlserver/explain/dist/"; \
     fi
     @echo "Installed to ${XDG_DATA_HOME:-$HOME/.local/share}/tabularis/plugins/sqlserver"
     @echo "Restart Tabularis (or toggle the plugin in Settings) to pick up changes."
@@ -115,9 +125,9 @@ dev-install: build
         mkdir -p "$HOME/Library/Application Support/tabularis/plugins/sqlserver/ui/dist"; \
         cp ui/dist/index.js "$HOME/Library/Application Support/tabularis/plugins/sqlserver/ui/dist/"; \
     fi
-    @if [ -f explain/dist/index.js ]; then \
+    @if [ -f explain/dist/index.iife.js ]; then \
         mkdir -p "$HOME/Library/Application Support/tabularis/plugins/sqlserver/explain/dist"; \
-        cp explain/dist/index.js "$HOME/Library/Application Support/tabularis/plugins/sqlserver/explain/dist/"; \
+        cp explain/dist/index.iife.js "$HOME/Library/Application Support/tabularis/plugins/sqlserver/explain/dist/"; \
     fi
     @echo "Installed to ~/Library/Application Support/tabularis/plugins/sqlserver"
     @echo "Restart Tabularis (or toggle the plugin in Settings) to pick up changes."
@@ -133,9 +143,9 @@ dev-install: build
         New-Item -ItemType Directory -Force -Path (Join-Path $dest "ui\dist") | Out-Null; \
         Copy-Item "ui\dist\index.js" (Join-Path $dest "ui\dist"); \
     }; \
-    if (Test-Path "explain\dist\index.js") { \
+    if (Test-Path "explain\dist\index.iife.js") { \
         New-Item -ItemType Directory -Force -Path (Join-Path $dest "explain\dist") | Out-Null; \
-        Copy-Item "explain\dist\index.js" (Join-Path $dest "explain\dist"); \
+        Copy-Item "explain\dist\index.iife.js" (Join-Path $dest "explain\dist"); \
     }; \
     Write-Host "Installed to $dest"; \
     Write-Host "Restart Tabularis (or toggle the plugin in Settings) to pick up changes."
