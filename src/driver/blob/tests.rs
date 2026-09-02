@@ -10,6 +10,18 @@ fn wire_format_contains_size_mime_and_base64() {
 }
 
 #[test]
+fn wire_format_decodes_for_row_editing_and_checks_declared_size() {
+    assert_eq!(
+        decode_blob_wire("BLOB:4:application/octet-stream:yv66vg==").unwrap(),
+        Some(vec![0xCA, 0xFE, 0xBA, 0xBE])
+    );
+    assert_eq!(decode_blob_wire("ordinary text").unwrap(), None);
+    assert!(decode_blob_wire("BLOB:3:application/octet-stream:yv66vg==")
+        .unwrap_err()
+        .contains("declares 3 bytes"));
+}
+
+#[test]
 fn wire_format_sniffs_png_magic_bytes() {
     let png_signature = [0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A];
     let wire = encode_blob_full(&png_signature, 8).unwrap();

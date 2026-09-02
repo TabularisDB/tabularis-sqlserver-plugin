@@ -113,6 +113,37 @@ pub fn encode_blob_full(data: &[u8], max_preview_size: u64) -> Result<String, St
     Ok(format!("BLOB:{}:{mime_type}:{encoded}", data.len()))
 }
 
+/// Decode the internal BLOB value sent back by the host during row editing.
+/// Returns `Ok(None)` for ordinary strings so callers can bind them as text.
+pub fn decode_blob_wire(value: &str) -> Result<Option<Vec<u8>>, String> {
+    if !value.starts_with("BLOB:") {
+        return Ok(None);
+    }
+    let mut fields = value.splitn(4, ':');
+    let _prefix = fields.next();
+    let declared_size = fields
+        .next()
+        .and_then(|size| size.parse::<usize>().ok())
+        .ok_or_else(|| "SQL Server BLOB value has an invalid size".to_string())?;
+    let _mime_type = fields
+        .next()
+        .filter(|mime| !mime.is_empty())
+        .ok_or_else(|| "SQL Server BLOB value has an empty MIME type".to_string())?;
+    let payload = fields
+        .next()
+        .ok_or_else(|| "SQL Server BLOB value has no base64 payload".to_string())?;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(payload)
+        .map_err(|error| format!("SQL Server BLOB value has invalid base64: {error}"))?;
+    if bytes.len() != declared_size {
+        return Err(format!(
+            "SQL Server BLOB value declares {declared_size} bytes but contains {} bytes",
+            bytes.len()
+        ));
+    }
+    Ok(Some(bytes))
+}
+
 pub fn validate_writable_file_path(file_path: &str) -> Result<(), String> {
     if file_path.trim().is_empty() {
         return Err("file_path must not be empty".to_string());

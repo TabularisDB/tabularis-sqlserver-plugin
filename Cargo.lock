@@ -1275,7 +1275,6 @@ dependencies = [
  "mssql-tds-preview",
  "mssql-tiberius-bridge",
  "once_cell",
- "rust_decimal",
  "serde",
  "serde_json",
  "tokio",

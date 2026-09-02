@@ -166,6 +166,43 @@ fn value_to_sql_param_accepts_supported_json_variants() {
     }
 }
 
+#[test]
+fn raw_row_edit_shape_is_explicit_and_null_is_untyped() {
+    let raw = serde_json::json!({
+        "value": "geometry::STGeomFromText('POINT (1 2)', 0)",
+        "is_raw": true
+    });
+    assert_eq!(
+        raw_sql_expression(&raw).unwrap(),
+        Some("geometry::STGeomFromText('POINT (1 2)', 0)")
+    );
+    assert_eq!(
+        raw_sql_expression(&serde_json::Value::Null).unwrap(),
+        Some("NULL")
+    );
+    assert_eq!(
+        raw_sql_expression(&serde_json::json!({"value": "still JSON"})).unwrap(),
+        None
+    );
+    assert!(raw_sql_expression(&serde_json::json!({"value": 1, "is_raw": true})).is_err());
+}
+
+#[test]
+fn explicit_insert_expressions_do_not_consume_parameter_markers() {
+    let sql = build_insert_sql_with_expressions(
+        Some("dbo"),
+        "spatial",
+        &["id".into(), "shape".into(), "note".into()],
+        &[
+            "@P1".into(),
+            "geometry::STGeomFromText('POINT (1 2)', 0)".into(),
+            "@P2".into(),
+        ],
+        false,
+    );
+    assert!(sql.contains("VALUES (@P1, geometry::STGeomFromText('POINT (1 2)', 0), @P2)"));
+}
+
 // --- composite PK SQL builders (issue #145) ----------------------------
 
 #[test]

@@ -45,6 +45,19 @@ pub fn format_datetime(dt: &NaiveDateTime) -> String {
     }
 }
 
+/// Decode SQL Server's legacy DATETIME ticks using its documented display
+/// granularity (.000, .003, or .007 seconds). The bridge truncates 1/300
+/// second ticks to milliseconds, which incorrectly renders .006 and .996.
+pub fn format_legacy_datetime(days: i32, ticks: u32) -> Option<String> {
+    let base = NaiveDate::from_ymd_opt(1900, 1, 1)?;
+    let date = base.checked_add_signed(chrono::Duration::days(i64::from(days)))?;
+    let total_millis = (u64::from(ticks) * 10 + 1) / 3;
+    let seconds = u32::try_from(total_millis / 1_000).ok()?;
+    let nanos = u32::try_from(total_millis % 1_000).ok()? * 1_000_000;
+    let time = NaiveTime::from_num_seconds_from_midnight_opt(seconds, nanos)?;
+    Some(format_datetime(&NaiveDateTime::new(date, time)))
+}
+
 /// Format a `DateTime<FixedOffset>` as RFC3339 with fractional seconds when
 /// present. `datetimeoffset` is the only SQL Server temporal type that
 /// carries a zone; we keep the zone explicit so round-tripping is safe.

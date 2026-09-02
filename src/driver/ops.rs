@@ -6,7 +6,8 @@ use std::collections::HashMap;
 use mssql_tiberius_bridge::ToSql;
 
 use crate::driver::helpers::{
-    bracket_quote, build_delete_composite_sql, build_update_composite_sql, qualify,
+    bracket_quote, build_delete_composite_sql, build_insert_sql_with_expressions,
+    build_update_composite_sql_with_expression, qualify, raw_sql_expression,
 };
 use crate::driver::{
     acquire, blob, ddl, execute_on_connection, explain, helpers, introspection, routines, triggers,
@@ -436,15 +437,35 @@ pub async fn insert_record(
         .map(|id| columns.iter().any(|c| c.eq_ignore_ascii_case(id)))
         .unwrap_or(false);
 
-    let sql = helpers::build_insert_sql(schema, table, &columns, needs_identity_insert);
-
-    // Map each JSON value to a typed SQL parameter. Owned boxes live
-    // for the duration of the call so the borrowed `&dyn ToSql` slice is
-    // valid.
-    let owned_params: Vec<Box<dyn mssql_tiberius_bridge::ToSql>> = columns
+    // Most values become parameters. The host may explicitly mark a value as
+    // raw SQL (`{ "value": "...", "is_raw": true }`) for server-side type
+    // constructors such as hierarchyid::Parse; raw values consume no marker.
+    let mut owned_params: Vec<Box<dyn mssql_tiberius_bridge::ToSql>> = Vec::new();
+    let mut expressions = Vec::with_capacity(columns.len());
+    for column in &columns {
+        let value = &data[column];
+        if let Some(expression) = raw_sql_expression(value)? {
+            expressions.push(expression.to_string());
+        } else {
+            owned_params.push(helpers::value_to_sql_param(value)?);
+            expressions.push(format!("@P{}", owned_params.len()));
+        }
+    }
+    let sql = if expressions
         .iter()
-        .map(|column| helpers::value_to_sql_param(&data[column]))
-        .collect::<Result<_, _>>()?;
+        .enumerate()
+        .all(|(index, expression)| expression == &format!("@P{}", index + 1))
+    {
+        helpers::build_insert_sql(schema, table, &columns, needs_identity_insert)
+    } else {
+        build_insert_sql_with_expressions(
+            schema,
+            table,
+            &columns,
+            &expressions,
+            needs_identity_insert,
+        )
+    };
     let params_slice: Vec<&dyn mssql_tiberius_bridge::ToSql> =
         owned_params.iter().map(|b| b.as_ref()).collect();
 
@@ -469,11 +490,28 @@ pub async fn update_record(
         .iter()
         .map(|(column, _)| (*column).clone())
         .collect();
-    let sql = build_update_composite_sql(schema, table, col_name, &pk_columns)
-        .ok_or_else(|| "SQL Server: UPDATE requires at least one primary-key column".to_string())?;
-
     let mut owned_params = Vec::with_capacity(primary_keys.len() + 1);
-    owned_params.push(helpers::value_to_sql_param(&new_val)?);
+    let value_expression = if let Some(expression) = raw_sql_expression(&new_val)? {
+        expression.to_string()
+    } else {
+        owned_params.push(helpers::value_to_sql_param(&new_val)?);
+        "@P1".to_string()
+    };
+    let first_pk_marker = owned_params.len() + 1;
+    let sql = if value_expression == "@P1" {
+        helpers::build_update_composite_sql(schema, table, col_name, &pk_columns)
+    } else {
+        build_update_composite_sql_with_expression(
+            schema,
+            table,
+            col_name,
+            &value_expression,
+            &pk_columns,
+            first_pk_marker,
+        )
+    }
+    .ok_or_else(|| "SQL Server: UPDATE requires at least one primary-key column".to_string())?;
+
     for (_, value) in primary_keys {
         owned_params.push(helpers::value_to_sql_param(value)?);
     }

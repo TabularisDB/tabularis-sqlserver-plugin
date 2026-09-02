@@ -219,6 +219,128 @@ fn result_rows(result: &Value) -> &Vec<Value> {
         .expect("query result must contain a rows array")
 }
 
+fn blob_wire(bytes: &[u8]) -> Value {
+    json!(format!(
+        "BLOB:{}:application/octet-stream:{}",
+        bytes.len(),
+        base64::engine::general_purpose::STANDARD.encode(bytes)
+    ))
+}
+
+fn raw_sql(expression: &str) -> Value {
+    json!({ "value": expression, "is_raw": true })
+}
+
+#[derive(Clone)]
+enum ExpectedCell {
+    Exact(Value),
+    Approx(f64),
+    Blob { exact_size: Option<usize> },
+}
+
+struct TypeCase {
+    advertised_name: &'static str,
+    ddl: &'static str,
+    insert: Value,
+    inserted: ExpectedCell,
+    boundary: Value,
+    bounded: ExpectedCell,
+    semantic_check: Option<(&'static str, Value)>,
+}
+
+impl TypeCase {
+    fn exact(
+        advertised_name: &'static str,
+        ddl: &'static str,
+        insert: Value,
+        inserted: Value,
+        boundary: Value,
+        bounded: Value,
+    ) -> Self {
+        Self {
+            advertised_name,
+            ddl,
+            insert,
+            inserted: ExpectedCell::Exact(inserted),
+            boundary,
+            bounded: ExpectedCell::Exact(bounded),
+            semantic_check: None,
+        }
+    }
+}
+
+fn assert_cell(case: &TypeCase, label: &str, actual: &Value, expected: &ExpectedCell) {
+    assert_ne!(
+        actual,
+        &Value::Null,
+        "{} {label} silently decoded as null",
+        case.advertised_name
+    );
+    match expected {
+        ExpectedCell::Exact(expected) => assert_eq!(
+            actual, expected,
+            "{} {label} representation",
+            case.advertised_name
+        ),
+        ExpectedCell::Approx(expected) => {
+            let actual = actual
+                .as_f64()
+                .unwrap_or_else(|| panic!("{} {label} must be numeric", case.advertised_name));
+            let relative_error = ((actual - expected) / expected).abs();
+            assert!(
+                relative_error <= f64::from(f32::EPSILON),
+                "{} {label}: expected approximately {expected}, got {actual}",
+                case.advertised_name
+            );
+        }
+        ExpectedCell::Blob { exact_size } => {
+            let wire = actual.as_str().unwrap_or_else(|| {
+                panic!("{} {label} must be a BLOB string", case.advertised_name)
+            });
+            let mut fields = wire.splitn(4, ':');
+            assert_eq!(
+                fields.next(),
+                Some("BLOB"),
+                "{} {label}",
+                case.advertised_name
+            );
+            let size = fields
+                .next()
+                .and_then(|size| size.parse::<usize>().ok())
+                .unwrap_or_else(|| {
+                    panic!("{} {label} has invalid BLOB size", case.advertised_name)
+                });
+            assert!(
+                size > 0,
+                "{} {label} BLOB must not be empty",
+                case.advertised_name
+            );
+            assert_eq!(
+                fields.next(),
+                Some("application/octet-stream"),
+                "{} {label} MIME type",
+                case.advertised_name
+            );
+            let decoded = base64::engine::general_purpose::STANDARD
+                .decode(fields.next().expect("BLOB payload"))
+                .expect("BLOB base64");
+            assert_eq!(
+                decoded.len(),
+                size,
+                "{} {label} byte count",
+                case.advertised_name
+            );
+            if let Some(expected_size) = exact_size {
+                assert_eq!(
+                    size, *expected_size,
+                    "{} {label} size",
+                    case.advertised_name
+                );
+            }
+        }
+    }
+}
+
 fn generated_create_table_sql(
     plugin: &mut Plugin,
     table_name: &str,
@@ -376,6 +498,445 @@ fn ddl_creates_identity_composite_and_all_data_type_categories() {
         .filter_map(|column| column["name"].as_str())
         .collect();
     assert_eq!(names.len(), 7);
+}
+
+fn advertised_type_cases() -> Vec<TypeCase> {
+    vec![
+        TypeCase::exact(
+            "TINYINT",
+            "TINYINT",
+            json!(42),
+            json!(42),
+            json!(255),
+            json!(255),
+        ),
+        TypeCase::exact(
+            "SMALLINT",
+            "SMALLINT",
+            json!(-123),
+            json!(-123),
+            json!(-32768),
+            json!(-32768),
+        ),
+        TypeCase::exact(
+            "INT",
+            "INT",
+            json!(123456),
+            json!(123456),
+            json!(2147483647),
+            json!(2147483647),
+        ),
+        TypeCase::exact(
+            "BIGINT",
+            "BIGINT",
+            json!("9007199254740992"),
+            json!("9007199254740992"),
+            json!("-9223372036854775808"),
+            json!("-9223372036854775808"),
+        ),
+        TypeCase::exact(
+            "DECIMAL",
+            "DECIMAL(38,10)",
+            json!("1234567890123456789012345678.1234567890"),
+            json!("1234567890123456789012345678.123456789"),
+            json!("-9999999999999999999999999999.9999999999"),
+            json!("-9999999999999999999999999999.9999999999"),
+        ),
+        TypeCase::exact(
+            "NUMERIC",
+            "NUMERIC(38,0)",
+            json!("90071992547409931234567890123456789012"),
+            json!("90071992547409931234567890123456789012"),
+            json!("99999999999999999999999999999999999999"),
+            json!("99999999999999999999999999999999999999"),
+        ),
+        TypeCase::exact(
+            "SMALLMONEY",
+            "SMALLMONEY",
+            json!("12.3456"),
+            json!("12.3456"),
+            json!("-214748.3648"),
+            json!("-214748.3648"),
+        ),
+        TypeCase::exact(
+            "MONEY",
+            "MONEY",
+            json!("-12.3400"),
+            json!("-12.34"),
+            json!("922337203685477.5807"),
+            json!("922337203685477.5807"),
+        ),
+        TypeCase::exact(
+            "FLOAT",
+            "FLOAT",
+            json!(1.25),
+            json!(1.25),
+            json!(1.7976931348623157e308),
+            json!(1.7976931348623157e308),
+        ),
+        TypeCase {
+            advertised_name: "REAL",
+            ddl: "REAL",
+            insert: json!(1.25),
+            inserted: ExpectedCell::Exact(json!(1.25)),
+            boundary: json!(3.4028235e38),
+            bounded: ExpectedCell::Approx(3.4028235e38),
+            semantic_check: None,
+        },
+        TypeCase::exact(
+            "CHAR",
+            "CHAR(5)",
+            json!("abc"),
+            json!("abc  "),
+            json!("12345"),
+            json!("12345"),
+        ),
+        TypeCase::exact(
+            "VARCHAR",
+            "VARCHAR(8)",
+            json!("plain"),
+            json!("plain"),
+            json!("edge'123"),
+            json!("edge'123"),
+        ),
+        TypeCase::exact(
+            "VARCHAR(MAX)",
+            "VARCHAR(MAX)",
+            json!("max text"),
+            json!("max text"),
+            json!("boundary text"),
+            json!("boundary text"),
+        ),
+        TypeCase::exact(
+            "TEXT",
+            "TEXT",
+            json!("legacy text"),
+            json!("legacy text"),
+            json!("legacy boundary"),
+            json!("legacy boundary"),
+        ),
+        TypeCase::exact(
+            "NCHAR",
+            "NCHAR(4)",
+            json!("猫"),
+            json!("猫   "),
+            json!("猫犬鳥魚"),
+            json!("猫犬鳥魚"),
+        ),
+        TypeCase::exact(
+            "NVARCHAR",
+            "NVARCHAR(16)",
+            json!("Grüße 🦀"),
+            json!("Grüße 🦀"),
+            json!("東京"),
+            json!("東京"),
+        ),
+        TypeCase::exact(
+            "NVARCHAR(MAX)",
+            "NVARCHAR(MAX)",
+            json!("Unicode Ω"),
+            json!("Unicode Ω"),
+            json!("boundary 🦀"),
+            json!("boundary 🦀"),
+        ),
+        TypeCase::exact(
+            "NTEXT",
+            "NTEXT",
+            json!("legacy Ω"),
+            json!("legacy Ω"),
+            json!("旧式"),
+            json!("旧式"),
+        ),
+        TypeCase::exact(
+            "BINARY",
+            "BINARY(4)",
+            blob_wire(&[1, 2]),
+            blob_wire(&[1, 2, 0, 0]),
+            blob_wire(&[0xde, 0xad, 0xbe, 0xef]),
+            blob_wire(&[0xde, 0xad, 0xbe, 0xef]),
+        ),
+        TypeCase::exact(
+            "VARBINARY",
+            "VARBINARY(8)",
+            blob_wire(&[1, 2, 3]),
+            blob_wire(&[1, 2, 3]),
+            blob_wire(&[0, 1, 2, 3, 4, 5, 6, 7]),
+            blob_wire(&[0, 1, 2, 3, 4, 5, 6, 7]),
+        ),
+        TypeCase::exact(
+            "VARBINARY(MAX)",
+            "VARBINARY(MAX)",
+            blob_wire(&[0xca, 0xfe]),
+            blob_wire(&[0xca, 0xfe]),
+            blob_wire(&[0xde, 0xad, 0xbe, 0xef]),
+            blob_wire(&[0xde, 0xad, 0xbe, 0xef]),
+        ),
+        TypeCase::exact(
+            "IMAGE",
+            "IMAGE",
+            blob_wire(&[9, 8, 7]),
+            blob_wire(&[9, 8, 7]),
+            blob_wire(&[6, 5, 4, 3]),
+            blob_wire(&[6, 5, 4, 3]),
+        ),
+        TypeCase::exact(
+            "DATE",
+            "DATE",
+            json!("2024-02-29"),
+            json!("2024-02-29"),
+            json!("0001-01-01"),
+            json!("0001-01-01"),
+        ),
+        TypeCase::exact(
+            "TIME",
+            "TIME(7)",
+            json!("12:34:56.1234567"),
+            json!("12:34:56.1234567"),
+            json!("23:59:59.9999999"),
+            json!("23:59:59.9999999"),
+        ),
+        TypeCase::exact(
+            "DATETIME",
+            "DATETIME",
+            json!("2024-01-02 03:04:05.006"),
+            json!("2024-01-02 03:04:05.007"),
+            json!("9999-12-31 23:59:59.997"),
+            json!("9999-12-31 23:59:59.997"),
+        ),
+        TypeCase::exact(
+            "DATETIME2",
+            "DATETIME2(7)",
+            json!("2024-01-02 03:04:05.1234567"),
+            json!("2024-01-02 03:04:05.1234567"),
+            json!("9999-12-31 23:59:59.9999999"),
+            json!("9999-12-31 23:59:59.9999999"),
+        ),
+        TypeCase::exact(
+            "SMALLDATETIME",
+            "SMALLDATETIME",
+            json!("2024-01-02 12:34:31"),
+            json!("2024-01-02 12:35:00"),
+            json!("1900-01-01 00:00:00"),
+            json!("1900-01-01 00:00:00"),
+        ),
+        TypeCase::exact(
+            "DATETIMEOFFSET",
+            "DATETIMEOFFSET(7)",
+            json!("2024-01-02 03:04:05.1234567 +05:30"),
+            json!("2024-01-02T03:04:05.123456700+05:30"),
+            json!("9999-12-31 23:59:59.9999999 +14:00"),
+            json!("9999-12-31T23:59:59.999999900+14:00"),
+        ),
+        TypeCase::exact(
+            "BIT",
+            "BIT",
+            json!(true),
+            json!(true),
+            json!(false),
+            json!(false),
+        ),
+        TypeCase::exact(
+            "UNIQUEIDENTIFIER",
+            "UNIQUEIDENTIFIER",
+            json!("00112233-4455-6677-8899-aabbccddeeff"),
+            json!("00112233-4455-6677-8899-aabbccddeeff"),
+            json!("ffffffff-ffff-ffff-ffff-ffffffffffff"),
+            json!("ffffffff-ffff-ffff-ffff-ffffffffffff"),
+        ),
+        TypeCase::exact(
+            "XML",
+            "XML",
+            json!("<root attr=\"x\">text</root>"),
+            json!("<root attr=\"x\">text</root>"),
+            json!("<r />"),
+            json!("<r/>"),
+        ),
+        TypeCase::exact(
+            "SQL_VARIANT",
+            "SQL_VARIANT",
+            json!("variant text"),
+            json!("variant text"),
+            raw_sql("CAST(2147483647 AS INT)"),
+            json!(2147483647),
+        ),
+        TypeCase {
+            advertised_name: "HIERARCHYID",
+            ddl: "HIERARCHYID",
+            insert: raw_sql("hierarchyid::Parse('/1/3/')"),
+            inserted: ExpectedCell::Blob { exact_size: None },
+            boundary: raw_sql("hierarchyid::Parse('/9/')"),
+            bounded: ExpectedCell::Blob { exact_size: None },
+            semantic_check: Some(("value.ToString()", json!("/9/"))),
+        },
+        TypeCase {
+            advertised_name: "GEOGRAPHY",
+            ddl: "GEOGRAPHY",
+            insert: raw_sql("geography::STGeomFromText('POINT (-122.35 47.65)', 4326)"),
+            inserted: ExpectedCell::Blob { exact_size: None },
+            boundary: raw_sql("geography::STGeomFromText('POINT (180 90)', 4326)"),
+            bounded: ExpectedCell::Blob { exact_size: None },
+            semantic_check: Some(("value.STSrid", json!(4326))),
+        },
+        TypeCase {
+            advertised_name: "GEOMETRY",
+            ddl: "GEOMETRY",
+            insert: raw_sql("geometry::STGeomFromText('LINESTRING (0 0, 3 4)', 0)"),
+            inserted: ExpectedCell::Blob { exact_size: None },
+            boundary: raw_sql("geometry::STGeomFromText('POINT (1 2)', 0)"),
+            bounded: ExpectedCell::Blob { exact_size: None },
+            semantic_check: Some(("value.ToString()", json!("POINT (1 2)"))),
+        },
+    ]
+}
+
+#[test]
+fn advertised_types_round_trip_through_query_insert_update_and_null() {
+    let manifest: Value = serde_json::from_str(include_str!("../.tabularium"))
+        .expect(".tabularium must be valid JSON");
+    let advertised: BTreeSet<String> = manifest["data_types"]
+        .as_array()
+        .expect("manifest data_types")
+        .iter()
+        .map(|data_type| data_type["name"].as_str().expect("type name").to_string())
+        .collect();
+    let cases = advertised_type_cases();
+    let covered: BTreeSet<String> = cases
+        .iter()
+        .map(|case| case.advertised_name.to_string())
+        .chain(["ROWVERSION".to_string(), "TIMESTAMP".to_string()])
+        .collect();
+    assert_eq!(
+        covered, advertised,
+        "live matrix must cover every advertised type"
+    );
+    assert!(
+        !advertised.contains("JSON") && !advertised.contains("VECTOR"),
+        "native JSON and VECTOR require a SQL Server version newer than the 2022 release baseline"
+    );
+
+    let mut plugin = Plugin::with_scratch_database();
+    for (index, case) in cases.iter().enumerate() {
+        let table = format!("type_{index:02}");
+        plugin.reset_table(
+            &table,
+            &format!("id INT PRIMARY KEY, value {} NULL", case.ddl),
+        );
+        for (id, value) in [
+            (1, case.insert.clone()),
+            (2, Value::Null),
+            (3, case.insert.clone()),
+        ] {
+            assert_eq!(
+                plugin.call_ok(
+                    "insert_record",
+                    json!({
+                        "params": connection_params(), "schema": TEST_SCHEMA, "table": table,
+                        "data": { "id": id, "value": value }
+                    }),
+                ),
+                json!(1),
+                "{} insert id {id}",
+                case.advertised_name
+            );
+        }
+        assert_eq!(
+            plugin.call_ok(
+                "update_record",
+                json!({
+                    "params": connection_params(), "schema": TEST_SCHEMA, "table": table,
+                    "pk_map": { "id": 3 }, "col_name": "value",
+                    "new_val": case.boundary.clone()
+                }),
+            ),
+            json!(1),
+            "{} update",
+            case.advertised_name
+        );
+
+        let result = plugin.execute(format!(
+            "SELECT value FROM [{TEST_SCHEMA}].[{table}] ORDER BY id"
+        ));
+        let rows = result_rows(&result);
+        assert_eq!(rows.len(), 3, "{} row count", case.advertised_name);
+        assert_cell(case, "representative", &rows[0][0], &case.inserted);
+        assert_eq!(
+            rows[1][0],
+            Value::Null,
+            "{} SQL NULL representation",
+            case.advertised_name
+        );
+        assert_cell(case, "boundary", &rows[2][0], &case.bounded);
+
+        if let Some((expression, expected)) = &case.semantic_check {
+            let semantic = plugin.execute(format!(
+                "SELECT {expression} FROM [{TEST_SCHEMA}].[{table}] WHERE id = 3"
+            ));
+            assert_eq!(
+                semantic["rows"][0][0], *expected,
+                "{} raw-expression write semantics",
+                case.advertised_name
+            );
+        }
+    }
+
+    // ROWVERSION and its TIMESTAMP synonym are generated concurrency tokens:
+    // they have a defined eight-byte read representation but deliberately no
+    // NULL, insert-value, or update-value direction.
+    for (index, type_name) in ["ROWVERSION", "TIMESTAMP"].iter().enumerate() {
+        let table = format!("type_readonly_{index}");
+        plugin.reset_table(&table, &format!("id INT PRIMARY KEY, value {type_name}"));
+        for id in [1, 2] {
+            plugin.call_ok(
+                "insert_record",
+                json!({
+                    "params": connection_params(), "schema": TEST_SCHEMA, "table": table,
+                    "data": { "id": id }
+                }),
+            );
+        }
+        let result = plugin.execute(format!(
+            "SELECT value FROM [{TEST_SCHEMA}].[{table}] ORDER BY id"
+        ));
+        for row in result_rows(&result) {
+            let case = TypeCase {
+                advertised_name: type_name,
+                ddl: type_name,
+                insert: Value::Null,
+                inserted: ExpectedCell::Blob {
+                    exact_size: Some(8),
+                },
+                boundary: Value::Null,
+                bounded: ExpectedCell::Blob {
+                    exact_size: Some(8),
+                },
+                semantic_check: None,
+            };
+            assert_cell(&case, "generated value", &row[0], &case.inserted);
+        }
+        let insert_error = plugin.call_error(
+            "insert_record",
+            json!({
+                "params": connection_params(), "schema": TEST_SCHEMA, "table": table,
+                "data": { "id": 3, "value": blob_wire(&[0; 8]) }
+            }),
+        );
+        assert!(
+            insert_error.to_ascii_lowercase().contains("timestamp"),
+            "{type_name} must reject explicit host inserts: {insert_error}"
+        );
+        let update_error = plugin.call_error(
+            "update_record",
+            json!({
+                "params": connection_params(), "schema": TEST_SCHEMA, "table": table,
+                "pk_map": { "id": 1 }, "col_name": "value",
+                "new_val": blob_wire(&[0; 8])
+            }),
+        );
+        assert!(
+            update_error.to_ascii_lowercase().contains("timestamp"),
+            "{type_name} must reject host updates: {update_error}"
+        );
+    }
 }
 
 #[test]

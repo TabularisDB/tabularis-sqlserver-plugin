@@ -15,7 +15,6 @@ use mssql_tds::datatypes::sql_json::SqlJson;
 use mssql_tds::datatypes::sql_vector::SqlVector;
 use mssql_tds::datatypes::sqldatatypes::TdsDataType;
 use mssql_tiberius_bridge::{ColumnType, Row};
-use rust_decimal::Decimal;
 use serde_json::Value;
 use uuid::Uuid;
 
@@ -30,6 +29,11 @@ pub fn normalized_column_type(tds_type: TdsDataType, byte_length: usize) -> Colu
         TdsDataType::BigChar => ColumnType::Char,
         TdsDataType::BigBinary => ColumnType::Binary,
         TdsDataType::DateTimeN if byte_length == 4 => ColumnType::Datetime4,
+        // SQL Server's hierarchyid, geography, and geometry arrive as UDT
+        // payloads. The bridge decodes those payloads into ColumnValues::Bytes
+        // but has no UDT ColumnType, so expose their lossless serialized form
+        // through the same BLOB wire representation as binary columns.
+        TdsDataType::Udt => ColumnType::BigVarBin,
         other => ColumnType::from_tds_with_length(other, byte_length),
     }
 }
@@ -89,12 +93,23 @@ pub fn extract_value_as(row: &Row, idx: usize, column_type: ColumnType) -> Resul
         },
 
         // Temporal
-        ColumnType::Datetime | ColumnType::Datetime4 => {
-            match row.try_get::<NaiveDateTime, _>(idx) {
-                Ok(Some(v)) => Value::String(temporal::format_datetime(&v)),
-                _ => Value::Null,
+        ColumnType::Datetime => match row.raw_value(idx) {
+            Some(ColumnValues::DateTime(value)) => {
+                temporal::format_legacy_datetime(value.days, value.time)
+                    .map(Value::String)
+                    .ok_or_else(|| "SQL Server returned an invalid DATETIME value".to_string())?
             }
-        }
+            Some(ColumnValues::Null) | None => Value::Null,
+            Some(other) => {
+                return Err(format!(
+                    "SQL Server returned {other:?} for a DATETIME column"
+                ))
+            }
+        },
+        ColumnType::Datetime4 => match row.try_get::<NaiveDateTime, _>(idx) {
+            Ok(Some(v)) => Value::String(temporal::format_datetime(&v)),
+            _ => Value::Null,
+        },
         ColumnType::Datetime2 => match row.try_get::<NaiveDateTime, _>(idx) {
             Ok(Some(v)) => Value::String(temporal::format_datetime(&v)),
             _ => Value::Null,
@@ -136,8 +151,8 @@ pub fn extract_value_as(row: &Row, idx: usize, column_type: ColumnType) -> Resul
             _ => Value::Null,
         },
 
-        // sql_variant remains a best-effort textual fallback.
-        ColumnType::Ssvariant => read_string(row, idx),
+        // sql_variant carries the contained value's concrete TDS variant.
+        ColumnType::Ssvariant => return read_variant(row, idx),
     };
     Ok(value)
 }
@@ -166,21 +181,15 @@ fn read_numeric_as_string(row: &Row, idx: usize) -> Result<Value, String> {
 }
 
 fn numeric_value_to_json(value: &ColumnValues) -> Result<Value, String> {
-    let decimal = match value {
+    let raw = match value {
         ColumnValues::Null => return Ok(Value::Null),
-        ColumnValues::Decimal(parts) | ColumnValues::Numeric(parts) => {
-            let raw = parts.to_string();
-            raw.parse::<Decimal>().map_err(|error| {
-                format!(
-                    "SQL Server decimal({}, {}) value {raw} exceeds rust_decimal's exact range: {error}",
-                    parts.precision, parts.scale
-                )
-            })?
-        }
-        ColumnValues::SmallMoney(money) => Decimal::new(i64::from(money.int_val), 4),
+        // DecimalParts already preserves all 38 SQL Server digits. Parsing it
+        // through rust_decimal first imposed an unrelated 29-digit ceiling.
+        ColumnValues::Decimal(parts) | ColumnValues::Numeric(parts) => parts.to_string(),
+        ColumnValues::SmallMoney(money) => fixed_scale_4(i64::from(money.int_val)),
         ColumnValues::Money(money) => {
             let raw = (i64::from(money.msb_part) << 32) | i64::from(money.lsb_part as u32);
-            Decimal::new(raw, 4)
+            fixed_scale_4(raw)
         }
         other => {
             return Err(format!(
@@ -188,9 +197,84 @@ fn numeric_value_to_json(value: &ColumnValues) -> Result<Value, String> {
             ))
         }
     };
-    Ok(Value::String(normalize_decimal_string(
-        &decimal.to_string(),
-    )))
+    Ok(Value::String(normalize_decimal_string(&raw)))
+}
+
+fn fixed_scale_4(raw: i64) -> String {
+    let raw = i128::from(raw);
+    let sign = if raw < 0 { "-" } else { "" };
+    let magnitude = raw.abs();
+    format!("{sign}{}.{:04}", magnitude / 10_000, magnitude % 10_000)
+}
+
+fn read_variant(row: &Row, idx: usize) -> Result<Value, String> {
+    let value = row
+        .raw_value(idx)
+        .ok_or_else(|| format!("SQL Server sql_variant column index {idx} is out of bounds"))?;
+    let json = match value {
+        ColumnValues::Null => Value::Null,
+        ColumnValues::TinyInt(value) => Value::from(*value),
+        ColumnValues::SmallInt(value) => Value::from(*value),
+        ColumnValues::Int(value) => Value::from(*value),
+        ColumnValues::BigInt(value) => i64_to_json(*value),
+        ColumnValues::Real(value) => f64_to_json(f64::from(*value)),
+        ColumnValues::Float(value) => f64_to_json(*value),
+        ColumnValues::Decimal(_)
+        | ColumnValues::Numeric(_)
+        | ColumnValues::SmallMoney(_)
+        | ColumnValues::Money(_) => return numeric_value_to_json(value),
+        ColumnValues::Bit(value) => Value::Bool(*value),
+        ColumnValues::String(value) => Value::String(value.to_utf8_string()),
+        ColumnValues::Bytes(value) => binary_to_json(value),
+        ColumnValues::Uuid(value) => Value::String(value.to_string()),
+        ColumnValues::Xml(value) => Value::String(value.as_string()),
+        ColumnValues::Json(value) => json_to_json(value)?,
+        ColumnValues::Vector(value) => vector_to_json(value),
+        ColumnValues::DateTime(value) => temporal::format_legacy_datetime(value.days, value.time)
+            .map(Value::String)
+            .ok_or_else(|| "SQL Server returned an invalid sql_variant DATETIME".to_string())?,
+        ColumnValues::SmallDateTime(_) => match row.try_get::<NaiveDateTime, _>(idx) {
+            Ok(Some(value)) => Value::String(temporal::format_datetime(&value)),
+            error => {
+                return Err(format!(
+                    "Failed to decode SQL Server sql_variant smalldatetime: {error:?}"
+                ))
+            }
+        },
+        ColumnValues::DateTime2(_) => match row.try_get::<NaiveDateTime, _>(idx) {
+            Ok(Some(value)) => Value::String(temporal::format_datetime(&value)),
+            error => {
+                return Err(format!(
+                    "Failed to decode SQL Server sql_variant datetime2: {error:?}"
+                ))
+            }
+        },
+        ColumnValues::DateTimeOffset(_) => match row.try_get::<DateTime<FixedOffset>, _>(idx) {
+            Ok(Some(value)) => Value::String(temporal::format_datetime_offset(&value)),
+            error => {
+                return Err(format!(
+                    "Failed to decode SQL Server sql_variant datetimeoffset: {error:?}"
+                ))
+            }
+        },
+        ColumnValues::Date(_) => match row.try_get::<NaiveDate, _>(idx) {
+            Ok(Some(value)) => Value::String(temporal::format_date(&value)),
+            error => {
+                return Err(format!(
+                    "Failed to decode SQL Server sql_variant date: {error:?}"
+                ))
+            }
+        },
+        ColumnValues::Time(_) => match row.try_get::<NaiveTime, _>(idx) {
+            Ok(Some(value)) => Value::String(temporal::format_time(&value)),
+            error => {
+                return Err(format!(
+                    "Failed to decode SQL Server sql_variant time: {error:?}"
+                ))
+            }
+        },
+    };
+    Ok(json)
 }
 
 fn json_to_json(json: &SqlJson) -> Result<Value, String> {
@@ -211,14 +295,20 @@ fn vector_to_json(vector: &SqlVector) -> Value {
 }
 
 fn read_binary_as_base64(row: &Row, idx: usize) -> Value {
-    use base64::Engine as _;
     match row.try_get::<&[u8], _>(idx) {
-        Ok(Some(bytes)) => Value::String(format!(
-            "base64:{}",
-            base64::engine::general_purpose::STANDARD.encode(bytes)
-        )),
+        Ok(Some(bytes)) => binary_to_json(bytes),
         _ => Value::Null,
     }
+}
+
+fn binary_to_json(bytes: &[u8]) -> Value {
+    // Query grids and the dedicated preview RPC share the host's BLOB wire
+    // shape. The grid path has already received the bytes from SQL Server, so
+    // it has no useful pre-transfer size limit to apply here.
+    Value::String(
+        crate::driver::blob::encode_blob_full(bytes, u64::MAX)
+            .expect("u64::MAX cannot reject an in-memory BLOB"),
+    )
 }
 
 // --- Pure helpers (testable) ---------------------------------------------

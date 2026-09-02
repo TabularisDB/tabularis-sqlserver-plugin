@@ -192,7 +192,28 @@ Generic DDL types emitted by Tabularis map to SQL Server-native spellings. In
 particular, generic `TIMESTAMP` maps to `DATETIME2`; SQL Server's own
 `TIMESTAMP` type remains a deprecated `ROWVERSION` synonym, not a date/time.
 
-`BIGINT` values outside JavaScript's safe integer range are delivered as strings so they round-trip without precision loss.
+`BIGINT` values outside JavaScript's safe integer range and all exact
+`DECIMAL`, `NUMERIC`, `MONEY`, and `SMALLMONEY` values are delivered as
+strings so they round-trip without precision loss. `TIME(7)`, `DATETIME2(7)`,
+and `DATETIMEOFFSET(7)` preserve 100-nanosecond precision; legacy `DATETIME`
+is rendered at SQL Server's `.000`, `.003`, or `.007` second granularity.
+`SQL_VARIANT` is emitted using the JSON representation of its contained value.
+
+Binary values in query grids use the host BLOB wire shape
+`BLOB:<bytes>:<mime>:<base64>` and the same shape is accepted by insert and
+update. SQL Server CLR UDTs (`HIERARCHYID`, `GEOGRAPHY`, and `GEOMETRY`) are
+losslessly displayed in that opaque binary shape because the TDS bridge does
+not expose their type-specific value APIs. Protocol clients can write those
+columns with the explicit raw row-edit shape
+`{"value":"<SQL expression>","is_raw":true}`; ordinary values remain bound
+parameters. `ROWVERSION` and its deprecated `TIMESTAMP` synonym are read-only,
+server-generated eight-byte values: omit them on insert and do not update
+them.
+
+The pinned client can decode the newer native TDS `JSON` and `VECTOR` wire
+types, and unit tests protect those paths. They are not advertised for column
+creation while SQL Server 2022 is the plugin's live-test and release baseline;
+JSON documents remain supported through `NVARCHAR(MAX)` on that server.
 
 ### Binary export and preview
 

@@ -104,19 +104,32 @@ pub fn build_insert_sql(
     columns: &[String],
     wrap_identity_insert: bool,
 ) -> String {
+    let expressions: Vec<String> = (1..=columns.len()).map(|i| format!("@P{i}")).collect();
+    build_insert_sql_with_expressions(schema, table, columns, &expressions, wrap_identity_insert)
+}
+
+/// Build an INSERT whose value expressions have already been classified.
+/// Most entries are positional parameters; an explicitly marked `is_raw`
+/// edit may supply a SQL expression instead.
+pub fn build_insert_sql_with_expressions(
+    schema: Option<&str>,
+    table: &str,
+    columns: &[String],
+    expressions: &[String],
+    wrap_identity_insert: bool,
+) -> String {
+    debug_assert_eq!(columns.len(), expressions.len());
     let target = qualify(schema, table);
     let col_list = columns
         .iter()
         .map(|c| bracket_quote(c))
         .collect::<Vec<_>>()
         .join(", ");
-    let placeholders = (1..=columns.len())
-        .map(|i| format!("@P{}", i))
-        .collect::<Vec<_>>()
-        .join(", ");
     let insert = format!(
         "INSERT INTO {} ({}) VALUES ({})",
-        target, col_list, placeholders
+        target,
+        col_list,
+        expressions.join(", ")
     );
 
     if wrap_identity_insert {
@@ -197,11 +210,41 @@ pub fn value_to_sql_param(
                     .ok_or_else(|| format!("Invalid SQL Server numeric value: {number}"))
             }
         }
-        serde_json::Value::String(value) => Ok(Box::new(value.clone())),
+        serde_json::Value::String(value) => match crate::driver::blob::decode_blob_wire(value)? {
+            Some(bytes) => Ok(Box::new(bytes)),
+            None => Ok(Box::new(value.clone())),
+        },
         serde_json::Value::Array(_) | serde_json::Value::Object(_) => {
             Ok(Box::new(value.to_string()))
         }
     }
+}
+
+/// Return the SQL expression from the explicit row-edit raw-value shape.
+/// Ordinary JSON objects remain bindable JSON values; only `is_raw: true`
+/// opts into expression insertion.
+pub fn raw_sql_expression(value: &serde_json::Value) -> Result<Option<&str>, String> {
+    // An untyped SQL NULL is assignable to every nullable SQL Server type;
+    // the bridge's fallback NVARCHAR NULL parameter is not (notably binary
+    // and CLR UDT columns reject that implicit conversion).
+    if value.is_null() {
+        return Ok(Some("NULL"));
+    }
+    let serde_json::Value::Object(object) = value else {
+        return Ok(None);
+    };
+    if object.get("is_raw") != Some(&serde_json::Value::Bool(true)) {
+        return Ok(None);
+    }
+    let expression = object
+        .get("value")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|expression| !expression.is_empty())
+        .ok_or_else(|| {
+            "SQL Server raw row-edit values require a non-empty string 'value'".to_string()
+        })?;
+    Ok(Some(expression))
 }
 
 /// Build a parameterised `WHERE` clause for a composite primary key.
@@ -259,11 +302,23 @@ pub fn build_update_composite_sql(
     col_name: &str,
     pk_cols: &[String],
 ) -> Option<String> {
-    let where_clause = build_pk_where_clause(pk_cols, 2)?;
+    build_update_composite_sql_with_expression(schema, table, col_name, "@P1", pk_cols, 2)
+}
+
+pub fn build_update_composite_sql_with_expression(
+    schema: Option<&str>,
+    table: &str,
+    col_name: &str,
+    value_expression: &str,
+    pk_cols: &[String],
+    first_pk_marker: usize,
+) -> Option<String> {
+    let where_clause = build_pk_where_clause(pk_cols, first_pk_marker)?;
     Some(format!(
-        "UPDATE {} SET {} = @P1 WHERE {}",
+        "UPDATE {} SET {} = {} WHERE {}",
         qualify(schema, table),
         bracket_quote(col_name),
+        value_expression,
         where_clause
     ))
 }
