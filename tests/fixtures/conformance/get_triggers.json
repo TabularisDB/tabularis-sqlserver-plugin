@@ -1,0 +1,20 @@
+{
+  "id": 1,
+  "jsonrpc": "2.0",
+  "result": [
+    {
+      "definition": "CREATE TRIGGER [ss044].[base_after] ON [ss044].[child] AFTER INSERT, UPDATE AS BEGIN SET NOCOUNT ON; END",
+      "event": "INSERT OR UPDATE",
+      "name": "base_after",
+      "table_name": "child",
+      "timing": "AFTER"
+    },
+    {
+      "definition": "CREATE TRIGGER [ss044].[base_instead] ON [ss044].[child] INSTEAD OF DELETE AS BEGIN SET NOCOUNT ON; END",
+      "event": "DELETE",
+      "name": "base_instead",
+      "table_name": "child",
+      "timing": "INSTEAD OF"
+    }
+  ]
+}

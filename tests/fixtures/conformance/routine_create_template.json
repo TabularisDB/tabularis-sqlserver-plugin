@@ -1,0 +1,5 @@
+{
+  "id": 1,
+  "jsonrpc": "2.0",
+  "result": "CREATE FUNCTION [ss044].[my_function] (@value INT)\nRETURNS INT\nAS\nBEGIN\n    RETURN @value;\nEND"
+}

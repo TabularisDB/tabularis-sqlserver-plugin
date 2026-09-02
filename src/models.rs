@@ -76,6 +76,8 @@ pub struct TableColumn {
     pub is_pk: bool,
     pub is_nullable: bool,
     pub is_auto_increment: bool,
+    #[serde(default)]
+    pub is_generated: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub default_value: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -99,6 +101,8 @@ pub struct Index {
     pub is_unique: bool,
     pub is_primary: bool,
     pub seq_in_index: i32,
+    #[serde(default)]
+    pub is_expression: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

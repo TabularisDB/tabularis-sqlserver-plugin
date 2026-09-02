@@ -1,0 +1,115 @@
+{
+  "id": 1,
+  "jsonrpc": "2.0",
+  "result": {
+    "blob_rows": [
+      {
+        "data_type": "int",
+        "is_auto_increment": false,
+        "is_generated": false,
+        "is_nullable": false,
+        "is_pk": true,
+        "name": "id"
+      },
+      {
+        "data_type": "varbinary(max)",
+        "is_auto_increment": false,
+        "is_generated": false,
+        "is_nullable": false,
+        "is_pk": false,
+        "name": "payload"
+      }
+    ],
+    "child": [
+      {
+        "data_type": "int",
+        "is_auto_increment": true,
+        "is_generated": false,
+        "is_nullable": false,
+        "is_pk": true,
+        "name": "id"
+      },
+      {
+        "data_type": "int",
+        "is_auto_increment": false,
+        "is_generated": false,
+        "is_nullable": true,
+        "is_pk": false,
+        "name": "parent_id"
+      },
+      {
+        "character_maximum_length": 42,
+        "data_type": "nvarchar(42)",
+        "default_value": "(N'pending')",
+        "is_auto_increment": false,
+        "is_generated": false,
+        "is_nullable": false,
+        "is_pk": false,
+        "name": "label"
+      },
+      {
+        "data_type": "nvarchar(max)",
+        "is_auto_increment": false,
+        "is_generated": false,
+        "is_nullable": true,
+        "is_pk": false,
+        "name": "note"
+      },
+      {
+        "data_type": "int",
+        "is_auto_increment": false,
+        "is_generated": true,
+        "is_nullable": true,
+        "is_pk": false,
+        "name": "generated_value"
+      }
+    ],
+    "crud_rows": [
+      {
+        "data_type": "int",
+        "is_auto_increment": false,
+        "is_generated": false,
+        "is_nullable": false,
+        "is_pk": true,
+        "name": "id"
+      },
+      {
+        "character_maximum_length": 20,
+        "data_type": "nvarchar(20)",
+        "is_auto_increment": false,
+        "is_generated": false,
+        "is_nullable": false,
+        "is_pk": false,
+        "name": "value"
+      }
+    ],
+    "drop_fk_child": [
+      {
+        "data_type": "int",
+        "is_auto_increment": false,
+        "is_generated": false,
+        "is_nullable": false,
+        "is_pk": true,
+        "name": "id"
+      },
+      {
+        "data_type": "int",
+        "is_auto_increment": false,
+        "is_generated": false,
+        "is_nullable": true,
+        "is_pk": false,
+        "name": "parent_id"
+      }
+    ],
+    "parent": [
+      {
+        "data_type": "int",
+        "is_auto_increment": false,
+        "is_generated": false,
+        "is_nullable": false,
+        "is_pk": true,
+        "name": "id"
+      }
+    ]
+  }
+}

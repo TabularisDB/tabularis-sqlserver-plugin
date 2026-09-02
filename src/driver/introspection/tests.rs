@@ -18,6 +18,7 @@ fn q_get_columns_joins_sys_types_and_reports_pk() {
     assert!(Q_GET_COLUMNS.contains("sys.indexes"));
     assert!(Q_GET_COLUMNS.contains("is_primary_key"));
     assert!(Q_GET_COLUMNS.contains("sys.default_constraints"));
+    assert!(Q_GET_COLUMNS.contains("c.is_computed AS is_generated"));
     assert!(Q_GET_COLUMNS.contains("OBJECT_ID(@P1)"));
     assert!(Q_GET_COLUMNS.contains("ORDER BY c.column_id"));
 }
@@ -189,6 +190,7 @@ fn build_table_column_populates_string_length() {
         "nvarchar".into(),
         true,
         false,
+        false,
         40,
         false,
         None,
@@ -204,7 +206,7 @@ fn build_table_column_populates_string_length() {
 
 #[test]
 fn build_table_column_leaves_length_none_for_numeric() {
-    let col = build_table_column("id".into(), "int".into(), false, true, 4, true, None);
+    let col = build_table_column("id".into(), "int".into(), false, true, false, 4, true, None);
     assert_eq!(col.character_maximum_length, None);
     assert!(col.is_pk);
     assert!(col.is_auto_increment);
@@ -217,6 +219,7 @@ fn build_table_column_honours_max_as_none() {
         "payload".into(),
         "varbinary".into(),
         true,
+        false,
         false,
         -1,
         false,
@@ -232,12 +235,29 @@ fn build_table_column_carries_default_value() {
         "datetime2".into(),
         false,
         false,
+        false,
         8,
         false,
         Some("(getdate())".into()),
     );
     assert_eq!(col.default_value, Some("(getdate())".into()));
     assert_eq!(col.character_maximum_length, None);
+}
+
+#[test]
+fn build_table_column_reports_generated_and_parameterized_lengths() {
+    let col = build_table_column(
+        "summary".into(),
+        "nvarchar(42)".into(),
+        true,
+        false,
+        true,
+        84,
+        false,
+        None,
+    );
+    assert!(col.is_generated);
+    assert_eq!(col.character_maximum_length, Some(42));
 }
 
 // --- build_foreign_keys ----------------------------------------------

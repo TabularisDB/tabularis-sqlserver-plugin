@@ -1,0 +1,23 @@
+{
+  "id": 1,
+  "jsonrpc": "2.0",
+  "result": [
+    {
+      "data_type": "int",
+      "is_auto_increment": true,
+      "is_generated": false,
+      "is_nullable": false,
+      "is_pk": false,
+      "name": "id"
+    },
+    {
+      "character_maximum_length": 42,
+      "data_type": "nvarchar(42)",
+      "is_auto_increment": false,
+      "is_generated": false,
+      "is_nullable": false,
+      "is_pk": false,
+      "name": "label"
+    }
+  ]
+}

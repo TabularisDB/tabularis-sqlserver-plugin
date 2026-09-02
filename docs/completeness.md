@@ -31,9 +31,24 @@ remaining protocol gaps are:
 - A host-method coverage test snapshots every RPC sent by the host and requires
   each one to be dispatched or included in the reasoned `NOT_IMPLEMENTED`
   table. Unknown methods also return `-32601` naming the method and plugin.
-- `explain_query` currently returns an in-process parsed plan. `SS-035` will
-  return raw `sqlserver-showplan-xml` after the plugin-owned parser contract
-  and host support are available.
+- `explain_query` returns raw `sqlserver-showplan-xml` for the plugin-owned
+  TypeScript parser registered by the host.
+
+## Host model conformance
+
+`tests/conformance.rs` carries verbatim response-model definitions from
+Tabularis host commit `ba0463d3b861ec8fad110126c67e3fc12bac9839` and checks a
+live-captured fixture for every implemented RPC. Regenerate all 54 responses
+with `python3 tests/capture_conformance.py` whenever the host models or RPC
+surface changes.
+
+The first conformance sync found two additive host fields missing from the
+plugin wire models. SQL Server column introspection now emits `is_generated`
+from `sys.columns.is_computed`, including the schema snapshot and batch path,
+and index metadata emits `is_expression: false` because SQL Server does not
+support arbitrary expression index keys. Parameterized character types now
+retain `character_maximum_length`; absent lengths and defaults remain omitted
+and deserialize through the host's optional fields.
 
 ## BLOB policy
 

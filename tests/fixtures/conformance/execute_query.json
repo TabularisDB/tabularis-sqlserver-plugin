@@ -1,0 +1,41 @@
+{
+  "id": 1,
+  "jsonrpc": "2.0",
+  "result": {
+    "additional_results": [
+      {
+        "affected_rows": 0,
+        "columns": [
+          "parent_id"
+        ],
+        "pagination": null,
+        "rows": [
+          [
+            1
+          ],
+          [
+            2
+          ]
+        ],
+        "truncated": false
+      }
+    ],
+    "affected_rows": 0,
+    "columns": [
+      "id",
+      "label"
+    ],
+    "pagination": null,
+    "rows": [
+      [
+        1,
+        "alpha"
+      ],
+      [
+        2,
+        "beta"
+      ]
+    ],
+    "truncated": false
+  }
+}

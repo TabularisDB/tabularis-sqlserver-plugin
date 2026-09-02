@@ -1,0 +1,7 @@
+{
+  "id": 1,
+  "jsonrpc": "2.0",
+  "result": [
+    "CREATE UNIQUE INDEX [ix_generated_value] ON [ss044].[generated_table] ([value])"
+  ]
+}

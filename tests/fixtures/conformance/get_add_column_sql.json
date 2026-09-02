@@ -1,0 +1,7 @@
+{
+  "id": 1,
+  "jsonrpc": "2.0",
+  "result": [
+    "ALTER TABLE [ss044].[generated_table] ADD [value] NVARCHAR(40) NULL"
+  ]
+}

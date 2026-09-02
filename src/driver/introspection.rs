@@ -39,6 +39,7 @@ SELECT \
     END AS data_type, \
     c.is_nullable AS is_nullable, \
     c.is_identity AS is_identity, \
+    c.is_computed AS is_generated, \
     CAST(c.max_length AS INT) AS max_length, \
     CAST(ISNULL(( \
         SELECT TOP 1 1 \
@@ -193,6 +194,7 @@ SELECT \
     END AS data_type, \
     c.is_nullable AS is_nullable, \
     c.is_identity AS is_identity, \
+    c.is_computed AS is_generated, \
     CAST(c.max_length AS INT) AS max_length, \
     CAST(ISNULL(( \
         SELECT TOP 1 1 \
@@ -357,11 +359,13 @@ pub fn normalize_routine_type(raw: Option<&str>) -> String {
 /// by the `sys.*` introspection queries. Extracted out of the async paths so
 /// the field-by-field mapping — including the non-obvious
 /// `character_maximum_length` policy — stays unit-testable.
+#[allow(clippy::too_many_arguments)]
 pub fn build_table_column(
     name: String,
     data_type: String,
     is_nullable: bool,
     is_identity: bool,
+    is_generated: bool,
     max_length_bytes: i32,
     is_pk: bool,
     default_value: Option<String>,
@@ -377,6 +381,7 @@ pub fn build_table_column(
         is_pk,
         is_nullable,
         is_auto_increment: is_identity,
+        is_generated,
         default_value,
         character_maximum_length,
     }
@@ -420,8 +425,10 @@ pub fn split_agg_columns(raw: &str) -> Vec<String> {
 /// Whether a given SQL Server type name is a string-like type that should
 /// advertise `character_maximum_length` to the UI.
 pub fn is_string_type(data_type: &str) -> bool {
+    let normalized = data_type.to_ascii_lowercase();
+    let base_type = normalized.split('(').next().unwrap_or(normalized.as_str());
     matches!(
-        data_type.to_ascii_lowercase().as_str(),
+        base_type,
         "char"
             | "varchar"
             | "nchar"
@@ -494,6 +501,7 @@ pub async fn get_columns(
                 row_str(&r, "data_type"),
                 row_bool(&r, "is_nullable"),
                 row_bool(&r, "is_identity"),
+                row_bool(&r, "is_generated"),
                 row_i32(&r, "max_length"),
                 row_bool(&r, "is_pk"),
                 row_str_opt(&r, "default_value"),
@@ -585,6 +593,7 @@ pub async fn get_all_columns_batch(
             row_str(&r, "data_type"),
             row_bool(&r, "is_nullable"),
             row_bool(&r, "is_identity"),
+            row_bool(&r, "is_generated"),
             row_i32(&r, "max_length"),
             row_bool(&r, "is_pk"),
             row_str_opt(&r, "default_value"),
@@ -822,6 +831,8 @@ pub async fn get_indexes(
             is_unique: row_bool(&r, "is_unique"),
             is_primary: row_bool(&r, "is_primary"),
             seq_in_index: row_i32(&r, "seq_in_index"),
+            // SQL Server indexes cannot contain arbitrary expressions.
+            is_expression: false,
         })
         .collect())
 }

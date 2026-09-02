@@ -1,0 +1,11 @@
+{
+  "id": 1,
+  "jsonrpc": "2.0",
+  "result": [
+    {
+      "host": "ss044_login",
+      "locked": false,
+      "user": "ss044_user"
+    }
+  ]
+}

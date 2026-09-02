@@ -1,0 +1,5 @@
+{
+  "id": 1,
+  "jsonrpc": "2.0",
+  "result": "DECLARE @tabularis_output_1 nvarchar(20) = NULL;\nEXEC [ss044].[sample_proc] @input = 7, @output = @tabularis_output_1 OUTPUT;\nSELECT @tabularis_output_1 AS [output]"
+}

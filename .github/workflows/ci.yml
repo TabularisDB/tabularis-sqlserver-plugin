@@ -27,9 +27,10 @@ jobs:
         run: cargo build
 
       - name: Run tests
-        # This crate has no library target, so --lib would fail. --bins keeps
-        # the live SQL Server test in its dedicated job below.
-        run: cargo test --bins
+        # This crate has no library target, so --lib would fail. Select the
+        # fixture-only conformance target while keeping live_db in its
+        # dedicated SQL Server job below.
+        run: cargo test --bins --test conformance
 
       - name: Clippy
         run: cargo clippy --all-targets -- -D warnings

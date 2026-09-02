@@ -1,0 +1,7 @@
+{
+  "id": 1,
+  "jsonrpc": "2.0",
+  "result": [
+    "ALTER TABLE [ss044].[generated_table] ADD CONSTRAINT [fk_generated_parent] FOREIGN KEY ([id]) REFERENCES [ss044].[parent] ([id]) ON DELETE CASCADE ON UPDATE NO ACTION"
+  ]
+}

@@ -46,10 +46,11 @@ test-explain:
     pnpm --dir explain typecheck
     pnpm --dir explain test
 
-# Run unit tests only. This crate is binary-only, so --lib would fail; --bins
-# also keeps tests/live_db.rs out of the default run.
+# Run unit tests and recorded host-model conformance. This crate is binary-only,
+# so --lib would fail; selecting conformance explicitly keeps tests/live_db.rs
+# out of the default run.
 test:
-    cargo test --bins
+    cargo test --bins --test conformance
 
 # Launch the local REPL that simulates Tabularis JSON-RPC calls over stdio.
 repl:

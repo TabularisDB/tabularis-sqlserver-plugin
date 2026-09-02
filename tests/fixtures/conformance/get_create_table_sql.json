@@ -1,0 +1,7 @@
+{
+  "id": 1,
+  "jsonrpc": "2.0",
+  "result": [
+    "CREATE TABLE [ss044].[generated_table] (\n  [id] INT NOT NULL,\n  [value] NVARCHAR(40) NULL,\n  PRIMARY KEY ([id])\n)"
+  ]
+}
