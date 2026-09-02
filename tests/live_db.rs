@@ -133,7 +133,7 @@ impl Plugin {
         plugin
     }
 
-    fn call(&mut self, method: &str, params: Value) -> Value {
+    fn send(&mut self, method: &str, params: Value) -> u64 {
         let id = self.next_id;
         self.next_id += 1;
         let request = json!({
@@ -148,7 +148,10 @@ impl Plugin {
             .write_all(line.as_bytes())
             .expect("write request to plugin stdin");
         self.stdin.flush().expect("flush plugin stdin");
+        id
+    }
 
+    fn read_response(&mut self) -> Value {
         let mut response_line = String::new();
         self.stdout
             .read_line(&mut response_line)
@@ -157,8 +160,12 @@ impl Plugin {
             !response_line.is_empty(),
             "plugin exited without a response"
         );
-        let response: Value =
-            serde_json::from_str(response_line.trim()).expect("parse JSON-RPC response");
+        serde_json::from_str(response_line.trim()).expect("parse JSON-RPC response")
+    }
+
+    fn call(&mut self, method: &str, params: Value) -> Value {
+        let id = self.send(method, params);
+        let response = self.read_response();
         assert_eq!(
             response.get("id").and_then(Value::as_u64),
             Some(id),
@@ -190,11 +197,15 @@ impl Plugin {
             .to_string()
     }
 
-    fn execute(&mut self, query: impl Into<String>) -> Value {
+    fn execute_with(&mut self, params: &Value, query: impl Into<String>) -> Value {
         self.call_ok(
             "execute_query",
-            json!({ "params": connection_params(), "query": query.into() }),
+            json!({ "params": params, "query": query.into() }),
         )
+    }
+
+    fn execute(&mut self, query: impl Into<String>) -> Value {
+        self.execute_with(&connection_params(), query)
     }
 
     fn reset_table(&mut self, table: &str, definition: &str) {
@@ -1304,7 +1315,7 @@ fn pagination_and_batch_semantics_cover_ordered_unordered_cte_and_dml() {
 }
 
 #[test]
-fn syntax_and_constraint_errors_surface_and_pooled_connection_recovers() {
+fn syntax_and_constraint_errors_keep_server_details_and_pool_recovery() {
     let mut plugin = Plugin::with_scratch_database();
     plugin.reset_table(
         "errors",
@@ -1316,9 +1327,17 @@ fn syntax_and_constraint_errors_surface_and_pooled_connection_recovers() {
 
     let syntax_error = plugin.call_error(
         "execute_query",
-        json!({ "params": connection_params(), "query": "SELEC definitely_invalid" }),
+        json!({
+            "params": connection_params(),
+            "query": "\nSELECT 1 +"
+        }),
     );
-    assert!(!syntax_error.is_empty());
+    assert!(
+        syntax_error.starts_with("SQL Server error 102:"),
+        "{syntax_error}"
+    );
+    assert!(syntax_error.contains("syntax error"), "{syntax_error}");
+    assert!(syntax_error.contains("line 2"), "{syntax_error}");
     let after_syntax = plugin.execute("SELECT CAST(1 AS INT) AS connection_ok");
     assert_eq!(after_syntax["rows"], json!([[1]]));
 
@@ -1326,14 +1345,398 @@ fn syntax_and_constraint_errors_surface_and_pooled_connection_recovers() {
         "execute_query",
         json!({
             "params": connection_params(),
-            "query": format!("INSERT INTO [{TEST_SCHEMA}].[errors] VALUES (2, 10)")
+            "query": format!(
+                "EXEC(N'INSERT INTO [{TEST_SCHEMA}].[errors] VALUES (2, 10)')"
+            )
         }),
     );
-    assert!(!constraint_error.is_empty());
+    assert!(
+        constraint_error.starts_with("SQL Server error 2627:"),
+        "{constraint_error}"
+    );
+    assert!(
+        constraint_error.contains("constraint violation"),
+        "{constraint_error}"
+    );
     let after_constraint = plugin.execute(format!(
         "SELECT COUNT(*) AS row_count FROM [{TEST_SCHEMA}].[errors]"
     ));
     assert_eq!(after_constraint["rows"], json!([[1]]));
+}
+
+#[test]
+fn connection_authentication_and_tls_errors_are_actionable_and_redacted() {
+    let mut plugin = Plugin::with_scratch_database();
+    let valid = connection_params();
+    let username = valid["username"].as_str().expect("username");
+    let password = valid["password"].as_str().expect("password");
+    let host = valid["host"].as_str().expect("host");
+    let port = valid["port"].as_u64().expect("port");
+    let database = valid["database"].as_str().expect("database");
+
+    let connection_secret = "Ss043!ConnectionSecret9";
+    let failed_connection_string = format!(
+        "sqlserver://{}:{}@{}:1/{}?Encrypt=true&TrustServerCertificate=true",
+        url_encode_component(username),
+        url_encode_component(connection_secret),
+        host,
+        url_encode_component(database),
+    );
+    let connection_error = plugin.call_error(
+        "test_connection",
+        json!({
+            "params": {
+                "connection_string": failed_connection_string,
+                "connection_id": "ss043-connection-recovery"
+            }
+        }),
+    );
+    assert!(
+        connection_error.contains("SQL Server connection failure"),
+        "{connection_error}"
+    );
+    assert!(!connection_error.contains(connection_secret));
+    assert!(!connection_error.contains(password));
+    assert!(!connection_error.contains(&failed_connection_string));
+
+    let mut recovered_connection = valid.clone();
+    recovered_connection["connection_id"] = json!("ss043-connection-recovery");
+    assert_eq!(
+        plugin.call_ok("test_connection", json!({ "params": recovered_connection })),
+        json!({ "success": true })
+    );
+
+    let authentication_secret = "Ss043!WrongPassword9";
+    let failed_auth_string = format!(
+        "sqlserver://{}:{}@{}:{}/{}?Encrypt=true&TrustServerCertificate=true",
+        url_encode_component(username),
+        url_encode_component(authentication_secret),
+        host,
+        port,
+        url_encode_component(database),
+    );
+    let authentication_error = plugin.call_error(
+        "test_connection",
+        json!({
+            "params": {
+                "connection_string": failed_auth_string,
+                "connection_id": "ss043-auth-recovery"
+            }
+        }),
+    );
+    assert!(
+        authentication_error.starts_with("SQL Server error 18456:"),
+        "{authentication_error}"
+    );
+    assert!(
+        authentication_error.contains("authentication failure"),
+        "{authentication_error}"
+    );
+    assert!(!authentication_error.contains(authentication_secret));
+    assert!(!authentication_error.contains(password));
+    assert!(!authentication_error.contains(&failed_auth_string));
+
+    let mut recovered_auth = valid.clone();
+    recovered_auth["connection_id"] = json!("ss043-auth-recovery");
+    assert_eq!(
+        plugin.call_ok("test_connection", json!({ "params": recovered_auth })),
+        json!({ "success": true })
+    );
+
+    let mut verify_full = valid;
+    verify_full["connection_id"] = json!("ss043-tls");
+    verify_full["ssl_mode"] = json!("verify-full");
+    let tls_error = plugin.call_error("test_connection", json!({ "params": verify_full }));
+    assert!(
+        tls_error.contains("SQL Server TLS negotiation failure"),
+        "{tls_error}"
+    );
+    assert!(tls_error.contains("ssl_mode 'verify-full'"), "{tls_error}");
+    assert!(tls_error.contains("ssl_mode 'require'"), "{tls_error}");
+
+    // A setup failure has no physical session to recycle, but it must not
+    // poison healthy pools in the same plugin process.
+    let after_tls = plugin.execute("SELECT CAST(1 AS INT) AS connection_ok");
+    assert_eq!(after_tls["rows"], json!([[1]]));
+}
+
+#[test]
+fn permission_denial_keeps_number_and_pool_recovers() {
+    const LOGIN: &str = "ss043_denied_login";
+    const USER: &str = "ss043_denied_user";
+    const PASSWORD: &str = "Ss043!DeniedPassword9";
+
+    let mut plugin = Plugin::with_scratch_database();
+    plugin.execute(format!(
+        "IF DATABASE_PRINCIPAL_ID(N'{USER}') IS NOT NULL DROP USER [{USER}]; \
+         IF SUSER_ID(N'{LOGIN}') IS NOT NULL DROP LOGIN [{LOGIN}]; \
+         DROP TABLE IF EXISTS [{TEST_SCHEMA}].[permission_error]; \
+         CREATE TABLE [{TEST_SCHEMA}].[permission_error] (id INT PRIMARY KEY); \
+         CREATE LOGIN [{LOGIN}] WITH PASSWORD = N'{PASSWORD}', CHECK_POLICY = OFF; \
+         CREATE USER [{USER}] FOR LOGIN [{LOGIN}]; \
+         DENY SELECT ON OBJECT::[{TEST_SCHEMA}].[permission_error] TO [{USER}]"
+    ));
+
+    let mut denied_params = connection_params();
+    denied_params["username"] = json!(LOGIN);
+    denied_params["password"] = json!(PASSWORD);
+    denied_params["connection_id"] = json!("ss043-permission");
+    let permission_error = plugin.call_error(
+        "execute_query",
+        json!({
+            "params": denied_params,
+            "query": format!("SELECT id FROM [{TEST_SCHEMA}].[permission_error]")
+        }),
+    );
+    assert!(
+        permission_error.starts_with("SQL Server error 229:"),
+        "{permission_error}"
+    );
+    assert!(
+        permission_error.contains("permission denial"),
+        "{permission_error}"
+    );
+    assert!(!permission_error.contains(PASSWORD));
+    let recovered = plugin.execute_with(&denied_params, "SELECT CAST(1 AS INT) AS connection_ok");
+    assert_eq!(recovered["rows"], json!([[1]]));
+
+    plugin.call_ok("shutdown", json!({}));
+    plugin.execute(format!(
+        "DROP TABLE IF EXISTS [{TEST_SCHEMA}].[permission_error]; \
+         IF DATABASE_PRINCIPAL_ID(N'{USER}') IS NOT NULL DROP USER [{USER}]; \
+         IF SUSER_ID(N'{LOGIN}') IS NOT NULL DROP LOGIN [{LOGIN}]"
+    ));
+}
+
+#[test]
+fn timeout_is_named_and_pool_replaces_the_cancelled_session() {
+    let mut plugin = Plugin::with_scratch_database();
+    plugin.call_ok(
+        "initialize",
+        json!({ "settings": { "query_timeout_seconds": 1 } }),
+    );
+    let mut params = connection_params();
+    params["connection_id"] = json!("ss043-timeout");
+
+    let timeout_error = plugin.call_error(
+        "execute_query",
+        json!({
+            "params": params,
+            "query": "WAITFOR DELAY '00:00:03'; SELECT CAST(1 AS INT) AS too_late"
+        }),
+    );
+    assert!(
+        timeout_error.contains("SQL Server timeout"),
+        "{timeout_error}"
+    );
+    let recovered = plugin.execute_with(&params, "SELECT CAST(1 AS INT) AS connection_ok");
+    assert_eq!(recovered["rows"], json!([[1]]));
+}
+
+#[test]
+fn recycle_clears_identity_showplan_transaction_and_temp_table_state() {
+    let mut plugin = Plugin::with_scratch_database();
+    plugin.reset_table(
+        "recycle_identity_first",
+        "id INT IDENTITY(1,1) PRIMARY KEY, value INT NOT NULL",
+    );
+    plugin.reset_table(
+        "recycle_identity_second",
+        "id INT IDENTITY(1,1) PRIMARY KEY, value INT NOT NULL",
+    );
+    let mut params = connection_params();
+    params["connection_id"] = json!("ss043-session-state");
+    let before = plugin.execute_with(&params, "SELECT @@SPID AS session_id");
+    let session_id = before["rows"][0][0].as_i64().expect("session id");
+
+    // Leave identity and temp-table state deliberately active after a
+    // successful RPC. The next checkout must run the manager's reset on the
+    // same physical session.
+    plugin.execute_with(
+        &params,
+        format!(
+            "SET IDENTITY_INSERT [{TEST_SCHEMA}].[recycle_identity_first] ON; \
+             CREATE TABLE #ss043_temp (id INT)"
+        ),
+    );
+    let reset_state = plugin.execute_with(
+        &params,
+        "SELECT @@SPID AS session_id, @@TRANCOUNT AS transaction_count, \
+         CASE WHEN OBJECT_ID('tempdb..#ss043_temp') IS NULL THEN 0 ELSE 1 END AS temp_exists",
+    );
+    assert_eq!(reset_state["rows"], json!([[session_id, 0, 0]]));
+    let identity_recovered = plugin.call_ok(
+        "insert_record",
+        json!({
+            "params": params, "schema": TEST_SCHEMA, "table": "recycle_identity_second",
+            "data": { "id": 43, "value": 1 }
+        }),
+    );
+    assert_eq!(identity_recovered, json!(1));
+
+    plugin.execute_with(&params, "SET SHOWPLAN_XML ON");
+    let reset_showplan = plugin.execute_with(
+        &params,
+        "SELECT @@SPID AS session_id, CAST(1 AS INT) AS connection_ok",
+    );
+    assert_eq!(reset_showplan["rows"], json!([[session_id, 1]]));
+
+    // Open transactions are discarded without issuing commands into their
+    // session. Closing the socket rolls back and drops local temp objects.
+    plugin.execute_with(
+        &params,
+        "BEGIN TRANSACTION; CREATE TABLE #ss043_open_transaction_temp (id INT)",
+    );
+    let reset_transaction = plugin.execute_with(
+        &params,
+        "SELECT @@TRANCOUNT AS transaction_count, \
+         CASE WHEN OBJECT_ID('tempdb..#ss043_open_transaction_temp') IS NULL THEN 0 ELSE 1 END AS temp_exists",
+    );
+    assert_eq!(reset_transaction["rows"], json!([[0, 0]]));
+
+    // Server errors are conservatively discarded because an error token can
+    // leave unread protocol state. Replacement must still be immediate and
+    // must roll back the transaction and remove its temp table.
+    let identity_error = plugin.call_error(
+        "execute_query",
+        json!({
+            "params": params,
+            "query": format!(
+                "SET IDENTITY_INSERT [{TEST_SCHEMA}].[recycle_identity_first] ON; \
+                 THROW 50043, 'identity cleanup fixture', 1"
+            )
+        }),
+    );
+    assert!(identity_error.starts_with("SQL Server error 50043:"));
+    let after_identity_error = plugin.call_ok(
+        "insert_record",
+        json!({
+            "params": params, "schema": TEST_SCHEMA, "table": "recycle_identity_second",
+            "data": { "id": 44, "value": 1 }
+        }),
+    );
+    assert_eq!(after_identity_error, json!(1));
+
+    let state_error = plugin.call_error(
+        "execute_query",
+        json!({
+            "params": params,
+            "query": "BEGIN TRANSACTION; CREATE TABLE #ss043_error_temp (id INT); SELECT 1 / 0"
+        }),
+    );
+    assert!(
+        state_error.starts_with("SQL Server error 8134:"),
+        "{state_error}"
+    );
+    let state = plugin.execute_with(
+        &params,
+        "SELECT @@TRANCOUNT AS transaction_count, \
+         CASE WHEN OBJECT_ID('tempdb..#ss043_error_temp') IS NULL THEN 0 ELSE 1 END AS temp_exists",
+    );
+    assert_eq!(state["rows"], json!([[0, 0]]));
+
+    let showplan_error = plugin.call_error(
+        "explain_query",
+        json!({
+            "params": params,
+            "query": "SELECT missing_column FROM definitely_missing_table",
+            "analyze": false
+        }),
+    );
+    assert!(
+        showplan_error.starts_with("SQL Server error 208:"),
+        "{showplan_error}"
+    );
+    let after_showplan = plugin.execute_with(&params, "SELECT CAST(1 AS INT) AS connection_ok");
+    assert_eq!(after_showplan["rows"], json!([[1]]));
+}
+
+#[test]
+fn deadlock_victim_is_named_and_its_pool_recovers() {
+    let mut plugin = Plugin::with_scratch_database();
+    plugin.reset_table("deadlock_error", "id INT PRIMARY KEY, value INT NOT NULL");
+    plugin.execute(format!(
+        "INSERT INTO [{TEST_SCHEMA}].[deadlock_error] VALUES (1, 0), (2, 0)"
+    ));
+
+    let mut params_a = connection_params();
+    params_a["connection_id"] = json!("ss043-deadlock-a");
+    let mut params_b = connection_params();
+    params_b["connection_id"] = json!("ss043-deadlock-b");
+    let query_a = format!(
+        "SET DEADLOCK_PRIORITY LOW; BEGIN TRANSACTION; \
+         UPDATE [{TEST_SCHEMA}].[deadlock_error] SET value = value + 1 WHERE id = 1; \
+         WAITFOR DELAY '00:00:01'; \
+         UPDATE [{TEST_SCHEMA}].[deadlock_error] SET value = value + 1 WHERE id = 2; COMMIT"
+    );
+    let query_b = format!(
+        "BEGIN TRANSACTION; \
+         UPDATE [{TEST_SCHEMA}].[deadlock_error] SET value = value + 1 WHERE id = 2; \
+         WAITFOR DELAY '00:00:01'; \
+         UPDATE [{TEST_SCHEMA}].[deadlock_error] SET value = value + 1 WHERE id = 1; COMMIT"
+    );
+    let id_a = plugin.send(
+        "execute_query",
+        json!({ "params": params_a, "query": query_a }),
+    );
+    let id_b = plugin.send(
+        "execute_query",
+        json!({ "params": params_b, "query": query_b }),
+    );
+    let first = plugin.read_response();
+    let second = plugin.read_response();
+    let responses = [first, second];
+    let (victim_id, deadlock_error) = responses
+        .iter()
+        .find_map(|response| {
+            let message = response["error"]["message"].as_str()?;
+            message
+                .starts_with("SQL Server error 1205:")
+                .then(|| (response["id"].as_u64().expect("response id"), message))
+        })
+        .expect("one concurrent transaction must be the deadlock victim");
+    assert!(
+        deadlock_error.starts_with("SQL Server error 1205:"),
+        "{deadlock_error}"
+    );
+    assert!(
+        deadlock_error.contains("deadlock victim"),
+        "{deadlock_error}"
+    );
+    assert_eq!(responses.len(), 2);
+
+    let victim_params = if victim_id == id_a {
+        &params_a
+    } else {
+        &params_b
+    };
+    assert!(victim_id == id_a || victim_id == id_b);
+    let recovered = plugin.execute_with(
+        victim_params,
+        "SELECT @@TRANCOUNT AS transaction_count, CAST(1 AS INT) AS connection_ok",
+    );
+    assert_eq!(recovered["rows"], json!([[0, 1]]));
+}
+
+#[test]
+fn killed_pooled_connection_is_detected_and_replaced() {
+    let mut plugin = Plugin::with_scratch_database();
+    let mut victim_params = connection_params();
+    victim_params["connection_id"] = json!("ss043-killed-victim");
+    let mut killer_params = connection_params();
+    killer_params["connection_id"] = json!("ss043-killer");
+
+    let before = plugin.execute_with(&victim_params, "SELECT @@SPID AS session_id");
+    let killed_session = before["rows"][0][0].as_i64().expect("session id");
+    plugin.execute_with(&killer_params, format!("KILL {killed_session}"));
+
+    let after = plugin.execute_with(
+        &victim_params,
+        "SELECT @@SPID AS session_id, @@TRANCOUNT AS transaction_count, \
+         CAST(1 AS INT) AS connection_ok",
+    );
+    assert_eq!(after["rows"][0][1], json!(0));
+    assert_eq!(after["rows"][0][2], json!(1));
 }
 
 #[test]

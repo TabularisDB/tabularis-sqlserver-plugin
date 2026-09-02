@@ -14,6 +14,7 @@ use std::future::Future;
 use std::time::Duration;
 
 use crate::connection::{custom_ca_error, resolve_connection_params};
+use crate::driver::error::{bridge_error_requires_discard, format_bridge_error};
 use crate::models::ConnectionParams;
 use crate::settings::PluginSettings;
 use deadpool::managed::{Manager, Metrics, RecycleError, RecycleResult};
@@ -27,6 +28,8 @@ use tokio::time::timeout;
 pub struct BridgeConnection {
     client: Client,
     query_timeout_seconds: Option<u32>,
+    ssl_mode: String,
+    recyclable: bool,
 }
 
 impl BridgeConnection {
@@ -44,27 +47,57 @@ impl BridgeConnection {
         }
     }
 
-    pub async fn simple_query(&mut self, sql: impl Into<String>) -> Result<QueryResult, Error> {
+    async fn simple_query_raw(&mut self, sql: impl Into<String>) -> Result<QueryResult, Error> {
         let operation = self.client.simple_query(sql.into());
         Self::with_query_timeout(self.query_timeout_seconds, operation).await
+    }
+
+    pub async fn simple_query(&mut self, sql: impl Into<String>) -> Result<QueryResult, String> {
+        let result = self.simple_query_raw(sql).await;
+        self.discard_if_transaction_open();
+        self.format_result(result)
     }
 
     pub async fn query(
         &mut self,
         sql: impl Into<String>,
         params: &[&dyn ToSql],
-    ) -> Result<QueryResult, Error> {
+    ) -> Result<QueryResult, String> {
         let operation = self.client.query(sql.into(), params);
-        Self::with_query_timeout(self.query_timeout_seconds, operation).await
+        let result = Self::with_query_timeout(self.query_timeout_seconds, operation).await;
+        self.discard_if_transaction_open();
+        self.format_result(result)
     }
 
     pub async fn execute(
         &mut self,
         sql: impl Into<String>,
         params: &[&dyn ToSql],
-    ) -> Result<ExecuteResult, Error> {
+    ) -> Result<ExecuteResult, String> {
         let operation = self.client.execute(sql.into(), params);
-        Self::with_query_timeout(self.query_timeout_seconds, operation).await
+        let result = Self::with_query_timeout(self.query_timeout_seconds, operation).await;
+        self.discard_if_transaction_open();
+        self.format_result(result)
+    }
+
+    fn discard_if_transaction_open(&mut self) {
+        if self.client.inner_mut().has_active_transaction() {
+            self.recyclable = false;
+        }
+    }
+
+    fn format_result<T>(&mut self, result: Result<T, Error>) -> Result<T, String> {
+        result.map_err(|error| {
+            if bridge_error_requires_discard(&error)
+                || self.client.inner_mut().has_active_transaction()
+            {
+                // Dropping the socket lets SQL Server roll back the
+                // transaction and release temp/session state without trying
+                // to issue reset commands into an errored transaction stream.
+                self.recyclable = false;
+            }
+            format_bridge_error(&error, Some(&self.ssl_mode))
+        })
     }
 
     pub fn inner_mut(&mut self) -> &mut TdsClient {
@@ -74,6 +107,10 @@ impl BridgeConnection {
     pub fn query_timeout_seconds(&self) -> Option<u32> {
         self.query_timeout_seconds
     }
+
+    pub fn ssl_mode(&self) -> &str {
+        &self.ssl_mode
+    }
 }
 
 /// Deadpool `Manager` for bridge connections.
@@ -81,15 +118,22 @@ impl BridgeConnection {
 pub struct BridgeManager {
     config: Config,
     startup_script: Option<String>,
+    ssl_mode: String,
     connect_timeout: Duration,
     query_timeout_seconds: Option<u32>,
 }
 
 impl BridgeManager {
-    pub fn new(config: Config, startup_script: Option<String>, settings: &PluginSettings) -> Self {
+    pub fn new(
+        config: Config,
+        startup_script: Option<String>,
+        ssl_mode: &str,
+        settings: &PluginSettings,
+    ) -> Self {
         Self {
             config,
             startup_script,
+            ssl_mode: ssl_mode.to_owned(),
             connect_timeout: Duration::from_secs(u64::from(settings.connect_timeout_seconds)),
             query_timeout_seconds: settings
                 .query_timeout()
@@ -99,17 +143,10 @@ impl BridgeManager {
 
     async fn apply_startup_script(&self, conn: &mut BridgeConnection) -> Result<(), Error> {
         if let Some(script) = self.startup_script.as_deref() {
-            conn.simple_query(script)
-                .await
-                .map_err(startup_script_error)?
-                .into_results();
+            conn.simple_query_raw(script).await?.into_results();
         }
         Ok(())
     }
-}
-
-fn startup_script_error(error: Error) -> Error {
-    Error::Conversion(format!("Startup script failed: {error}"))
 }
 
 impl Manager for BridgeManager {
@@ -129,16 +166,35 @@ impl Manager for BridgeManager {
         let mut connection = BridgeConnection {
             client,
             query_timeout_seconds: self.query_timeout_seconds,
+            ssl_mode: self.ssl_mode.clone(),
+            recyclable: true,
         };
         self.apply_startup_script(&mut connection).await?;
         Ok(connection)
     }
 
     async fn recycle(&self, conn: &mut Self::Type, _: &Metrics) -> RecycleResult<Self::Error> {
-        // Reset transaction, temporary-object, and SET state before another
-        // caller receives this physical session, then restore its configured
-        // startup script.
-        conn.simple_query("EXEC sp_reset_connection")
+        if !conn.recyclable || conn.client.inner_mut().has_active_transaction() {
+            return Err(RecycleError::message(
+                "connection was discarded after an error, timeout, transport failure, or open transaction",
+            ));
+        }
+
+        // SHOWPLAN must be disabled in its own batches: while SHOWPLAN_XML is
+        // active SQL Server plans later statements instead of executing them,
+        // including sp_reset_connection. Open transactions are discarded
+        // above; for reusable sessions the reset drops local temp tables,
+        // disables IDENTITY_INSERT and restores SET options before the startup
+        // script is reapplied.
+        conn.simple_query_raw("SET SHOWPLAN_XML OFF")
+            .await
+            .map_err(RecycleError::Backend)?
+            .into_results();
+        conn.simple_query_raw("SET STATISTICS XML OFF")
+            .await
+            .map_err(RecycleError::Backend)?
+            .into_results();
+        conn.simple_query_raw("EXEC sp_reset_connection")
             .await
             .map_err(RecycleError::Backend)?
             .into_results();

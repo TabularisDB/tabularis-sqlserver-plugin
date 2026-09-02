@@ -160,7 +160,9 @@ impl ParsedConnectionString {
                 });
             parsed.username = Some(percent_decode(username, false)?);
             if let Some(password) = password {
-                parsed.password = Some(percent_decode(password, false)?);
+                parsed.password = Some(percent_decode(password, false).map_err(|_| {
+                    "invalid percent encoding in SQL Server URL password".to_string()
+                })?);
             }
             host_port
         } else {
@@ -228,7 +230,7 @@ impl ParsedConnectionString {
             "userid" | "uid" | "user" | "username" => {
                 set_string(&mut self.username, value, "username")?;
             }
-            "password" | "pwd" => set_string(&mut self.password, value, "password")?,
+            "password" | "pwd" => set_sensitive_string(&mut self.password, value, "password")?,
             "encrypt" => {
                 let encrypt = parse_encrypt(&value)?;
                 set_value(&mut self.encrypt, encrypt, "Encrypt")?;
@@ -568,6 +570,22 @@ fn set_string(slot: &mut Option<String>, value: String, field: &str) -> Result<(
     Ok(())
 }
 
+fn set_sensitive_string(
+    slot: &mut Option<String>,
+    value: String,
+    field: &str,
+) -> Result<(), String> {
+    if slot.as_ref().is_some_and(|existing| existing != &value) {
+        return Err(format!(
+            "SQL Server connection string specifies conflicting {field} values '<redacted>' and '<redacted>'"
+        ));
+    }
+    if slot.is_none() {
+        *slot = Some(value);
+    }
+    Ok(())
+}
+
 fn set_value<T>(slot: &mut Option<T>, value: T, field: &str) -> Result<(), String>
 where
     T: Copy + PartialEq + std::fmt::Debug,
@@ -743,6 +761,24 @@ mod tests {
         assert!(error.contains("host"));
         assert!(error.contains("from-discrete"));
         assert!(error.contains("from-string"));
+    }
+
+    #[test]
+    fn password_parse_errors_never_echo_credentials() {
+        for (connection_string, secret) in [
+            (
+                "Server=localhost;Password=FirstSecret!;Password=SecondSecret!",
+                "FirstSecret!",
+            ),
+            (
+                "sqlserver://sa:Malformed%ZZSecret@localhost/master",
+                "Malformed",
+            ),
+        ] {
+            let error = resolve_connection_params(&params(connection_string)).unwrap_err();
+            assert!(!error.contains(secret), "{error}");
+            assert!(!error.contains(connection_string), "{error}");
+        }
     }
 
     #[test]

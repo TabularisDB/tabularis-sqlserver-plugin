@@ -69,6 +69,7 @@ pub async fn get_sqlserver_pool(params: &ConnectionParams) -> Result<SqlServerPo
     let manager = BridgeManager::new(
         build_config(&params, &settings)?,
         startup_script(&params),
+        params.ssl_mode.as_deref().unwrap_or("prefer"),
         &settings,
     );
     let pool = DeadPool::builder(manager)
@@ -77,6 +78,18 @@ pub async fn get_sqlserver_pool(params: &ConnectionParams) -> Result<SqlServerPo
         .map_err(|error| error.to_string())?;
     pools.insert(key, pool.clone());
     Ok(pool)
+}
+
+/// Remove a cached pool after checkout failed. This lets corrected connection
+/// parameters replace a failed lazy manager under the same connection id.
+pub async fn remove_sqlserver_pool(params: &ConnectionParams) {
+    let Ok(params) = resolve_connection_params(params) else {
+        return;
+    };
+    SQLSERVER_POOLS
+        .write()
+        .await
+        .remove(&build_connection_key(&params));
 }
 
 /// Drop pools that currently have no checked-out connections. Called

@@ -4,6 +4,7 @@ use serde::Serialize;
 use serde_json::{json, Value};
 
 use crate::connection::resolve_connection_params;
+use crate::driver::error::redact_connection_secrets;
 use crate::handlers::{blob, crud, ddl, metadata, query, routines, triggers, users, views};
 use crate::models::ConnectionParams;
 use crate::{pool_manager, settings};
@@ -196,10 +197,12 @@ pub fn respond<T: Serialize>(id: Value, outcome: Result<T, String>) -> Value {
 /// Deserialize the nested `params.params` connection object every RPC method
 /// receives.
 pub fn conn_params(params: &Value) -> Result<ConnectionParams, String> {
-    let params = serde_json::from_value(params.get("params").cloned().unwrap_or(Value::Null))
-        .map_err(|err| format!("invalid connection params: {err}"))?;
-    resolve_connection_params(&params)
-        .map_err(|error| format!("invalid connection params: {error}"))
+    let params: ConnectionParams =
+        serde_json::from_value(params.get("params").cloned().unwrap_or(Value::Null))
+            .map_err(|err| format!("invalid connection params: {err}"))?;
+    resolve_connection_params(&params).map_err(|error| {
+        redact_connection_secrets(format!("invalid connection params: {error}"), &params)
+    })
 }
 
 pub fn opt_str<'a>(params: &'a Value, key: &str) -> Option<&'a str> {

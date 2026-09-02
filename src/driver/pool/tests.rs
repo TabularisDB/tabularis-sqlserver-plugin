@@ -70,7 +70,7 @@ fn manager_new_stores_config() {
         &settings,
     )
     .expect("config builds");
-    let mgr = BridgeManager::new(cfg, Some("SET NOCOUNT ON".into()), &settings);
+    let mgr = BridgeManager::new(cfg, Some("SET NOCOUNT ON".into()), "prefer", &settings);
     let cloned = mgr.clone();
     let original = format!("{:?}", mgr);
     let cloned_dbg = format!("{:?}", cloned);
@@ -107,7 +107,7 @@ fn manager_snapshots_timeout_settings() {
         &settings,
     )
     .expect("config builds");
-    let manager = BridgeManager::new(cfg, None, &settings);
+    let manager = BridgeManager::new(cfg, None, "prefer", &settings);
 
     assert_eq!(manager.connect_timeout, Duration::from_secs(8));
     assert_eq!(manager.query_timeout_seconds, Some(42));

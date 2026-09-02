@@ -6,6 +6,7 @@
 
 pub mod blob;
 pub mod ddl;
+pub mod error;
 pub mod explain;
 pub mod extract;
 pub mod helpers;
@@ -23,14 +24,25 @@ use mssql_tiberius_bridge::row::RowSchema;
 use mssql_tiberius_bridge::Row;
 
 use crate::models::{ConnectionParams, Pagination, QueryResult};
-use crate::pool_manager::get_sqlserver_pool;
+use crate::pool_manager::{self, get_sqlserver_pool};
 
 /// Acquire a pooled client from the pool manager.
 pub async fn acquire(
     params: &ConnectionParams,
 ) -> Result<deadpool::managed::Object<pool::BridgeManager>, String> {
-    let pool = get_sqlserver_pool(params).await?;
-    pool.get().await.map_err(|e| e.to_string())
+    let pool = get_sqlserver_pool(params)
+        .await
+        .map_err(|message| error::redact_connection_secrets(message, params))?;
+    match pool.get().await {
+        Ok(connection) => Ok(connection),
+        Err(pool_error) => {
+            // A pool whose manager cannot connect must not pin stale host,
+            // credential, or TLS configuration under a stable connection id.
+            pool_manager::remove_sqlserver_pool(params).await;
+            let message = error::format_pool_error(&pool_error, params.ssl_mode.as_deref());
+            Err(error::redact_connection_secrets(message, params))
+        }
+    }
 }
 
 fn empty_query_result(columns: Vec<String>) -> QueryResult {
@@ -58,17 +70,18 @@ async fn run_query_collecting(
     query: &str,
 ) -> Result<Vec<QueryResult>, String> {
     let query_timeout_seconds = conn.query_timeout_seconds();
+    let ssl_mode = conn.ssl_mode().to_owned();
     let client = conn.inner_mut();
     // Drain any leftover state from a prior query / dropped stream so we
     // don't hit "open batch" errors when re-using the client.
     client
         .close_query()
         .await
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| error::format_tds_error(&error, Some(&ssl_mode)))?;
     client
         .execute(query.to_string(), query_timeout_seconds, None)
         .await
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| error::format_tds_error(&error, Some(&ssl_mode)))?;
 
     let mut results = Vec::new();
     while let Some(result_set) = client.get_current_resultset() {
@@ -83,7 +96,7 @@ async fn run_query_collecting(
         while let Some(values) = result_set
             .next_row()
             .await
-            .map_err(|error| error.to_string())?
+            .map_err(|error| error::format_tds_error(&error, Some(&ssl_mode)))?
         {
             let row = Row::from_schema(schema.clone(), values);
             current.rows.push(
@@ -104,7 +117,7 @@ async fn run_query_collecting(
         if !client
             .move_to_next()
             .await
-            .map_err(|error| error.to_string())?
+            .map_err(|error| error::format_tds_error(&error, Some(&ssl_mode)))?
         {
             break;
         }
