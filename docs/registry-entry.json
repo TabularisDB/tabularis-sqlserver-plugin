@@ -1,5 +1,4 @@
 {
-  "$comment": "TODO: Before opening the registry PR, confirm that Tabularis 0.22.0 includes SS-032 and SS-033, then remove this field.",
   "id": "sqlserver",
   "name": "Microsoft SQL Server",
   "description": "Full-featured Microsoft SQL Server driver for Tabularis with schema browsing, query execution, visual plans, type-aware row editing, DDL, routines, triggers, BLOBs, and database-user management.",
@@ -9,7 +8,7 @@
   "releases": [
     {
       "version": "1.0.0-beta.1",
-      "min_tabularis_version": "0.22.0",
+      "min_tabularis_version": "0.23.0",
       "assets": {
         "linux-x64": "https://github.com/TabularisDB/tabularis-sqlserver-plugin/releases/download/v1.0.0-beta.1/sqlserver-plugin-linux-x64.zip",
         "linux-arm64": "https://github.com/TabularisDB/tabularis-sqlserver-plugin/releases/download/v1.0.0-beta.1/sqlserver-plugin-linux-arm64.zip",

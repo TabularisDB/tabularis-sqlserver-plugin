@@ -13,7 +13,6 @@ pub mod introspection;
 pub mod ops;
 pub mod pool;
 pub mod routines;
-pub mod showplan;
 pub mod triggers;
 pub mod types;
 pub mod users;

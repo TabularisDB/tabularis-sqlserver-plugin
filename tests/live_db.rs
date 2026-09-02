@@ -648,7 +648,7 @@ fn syntax_and_constraint_errors_surface_and_pooled_connection_recovers() {
 }
 
 #[test]
-fn explain_query_returns_showplan_xml_for_estimate_and_analyze() {
+fn explain_query_returns_raw_showplan_xml_for_estimate_and_analyze() {
     let mut plugin = Plugin::with_scratch_database();
     plugin.reset_table("explain", "id INT PRIMARY KEY, value INT NOT NULL");
     plugin.execute(format!(
@@ -657,7 +657,7 @@ fn explain_query_returns_showplan_xml_for_estimate_and_analyze() {
     let query = format!("SELECT value FROM [{TEST_SCHEMA}].[explain] WHERE id = 1");
 
     for analyze in [false, true] {
-        let plan = plugin.call_ok(
+        let raw = plugin.call_ok(
             "explain_query",
             json!({
                 "params": connection_params(),
@@ -665,11 +665,22 @@ fn explain_query_returns_showplan_xml_for_estimate_and_analyze() {
                 "analyze": analyze
             }),
         );
-        let raw = plan["raw_output"]
+        let object = raw
+            .as_object()
+            .expect("raw EXPLAIN result must be an object");
+        assert_eq!(object.len(), 4, "raw EXPLAIN shape changed: {raw}");
+        assert_eq!(raw["engine"], "sqlserver");
+        assert_eq!(raw["format"], "sqlserver-showplan-xml");
+        assert_eq!(raw["original_query"], query);
+
+        let payload = raw["payload"]
             .as_str()
-            .expect("parsed plan must retain its raw SHOWPLAN XML");
-        assert!(raw.contains("ShowPlanXML"), "analyze={analyze}: {raw}");
-        assert_eq!(plan["driver"], "sqlserver");
+            .expect("raw EXPLAIN payload must be a SHOWPLAN XML string");
+        assert!(
+            payload.trim_start().starts_with("<ShowPlanXML ")
+                && payload.trim_end().ends_with("</ShowPlanXML>"),
+            "analyze={analyze}: {payload}"
+        );
     }
 }
 

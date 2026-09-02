@@ -18,8 +18,8 @@ A [Microsoft SQL Server](https://www.microsoft.com/sql-server) plugin for [Tabul
 
 This plugin enables Tabularis to connect to SQL Server instances, providing schema introspection, query execution, full CRUD, DDL, trigger and stored-routine management, BLOB handling, database-user management, and visual execution plans through a JSON-RPC 2.0 over stdio interface. It is written in Rust on top of Microsoft's [`mssql-tds`](https://github.com/microsoft/mssql-rust) protocol implementation (via [`mssql-tiberius-bridge`](https://crates.io/crates/mssql-tiberius-bridge)) with [`deadpool`](https://crates.io/crates/deadpool) connection pooling.
 
-> **Requires Tabularis v0.20.0 or later.** This plugin relies on the plugin
-> runtime introduced in that release and will not load on earlier versions.
+> **Requires Tabularis v0.23.0 or later.** This plugin relies on raw plugin
+> EXPLAIN output and plugin-provided parser bundle loading from that release.
 
 **Discord** — [Join our Discord server](https://discord.com/invite/K2hmhfHRSt) and chat with the maintainers.
 

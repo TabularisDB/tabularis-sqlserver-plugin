@@ -24,7 +24,7 @@ function flatten(node: ExplainNode): ExplainNode[] {
 }
 
 describe("parseShowplanXml", () => {
-  it.each(fixtureNames)("matches the Rust parser golden for %s", async (name) => {
+  it.each(fixtureNames)("matches the committed SHOWPLAN golden for %s", async (name) => {
     const xml = await readFixture(name);
     const expected = JSON.parse(
       await readFile(new URL(`expected/${name}.json`, fixtureDirectory), "utf8"),
@@ -78,7 +78,7 @@ describe("parseShowplanXml", () => {
     expect(plan.root.children[0]?.node_type).toBe("Table Scan");
   });
 
-  it("retains the Rust parser's error prefixes", () => {
+  it("retains the established SHOWPLAN error prefixes", () => {
     expect(() => parseShowplanXml("<ShowPlanXML><RelOp></ShowPlanXML>")).toThrowError(
       /^Failed to parse SQL Server SHOWPLAN_XML:/,
     );

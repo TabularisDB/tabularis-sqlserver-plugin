@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### BREAKING
+
+- Visual EXPLAIN now returns raw `sqlserver-showplan-xml` for the plugin-owned
+  TypeScript parser instead of parsing SHOWPLAN in the Rust process. This
+  requires Tabularis 0.23.0 or later, the first runtime with raw plugin
+  EXPLAIN output and plugin parser-bundle loading.
+
 ## [1.0.0-beta.1] - 2026-08-30
 
 ### Changed

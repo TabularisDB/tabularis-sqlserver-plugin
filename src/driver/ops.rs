@@ -377,11 +377,9 @@ pub async fn execute_batch(
     Ok(results)
 }
 
-/// Run SHOWPLAN_XML / STATISTICS XML and parse the document into the visual
-/// plan model the frontend renders. Unlike the built-in driver — whose raw
-/// XML is parsed by `@tabularis/explain` in the frontend — a plugin's
-/// `explain_query` result passes through to the frontend untouched, so the
-/// parsing happens here.
+/// Capture SHOWPLAN_XML / STATISTICS XML and return the raw plugin EXPLAIN
+/// shape. Compatible hosts dispatch the tagged payload to the parser declared
+/// in `.tabularium` instead of interpreting it in this Rust process.
 pub async fn explain_query(
     params: &ConnectionParams,
     query: &str,
@@ -389,7 +387,12 @@ pub async fn explain_query(
 ) -> Result<serde_json::Value, String> {
     let mut conn = acquire(params).await?;
     let payload = explain::explain_showplan_xml(&mut conn, query, analyze).await?;
-    crate::driver::showplan::parse_showplan_xml(&payload, query)
+    Ok(serde_json::json!({
+        "engine": "sqlserver",
+        "format": "sqlserver-showplan-xml",
+        "payload": payload,
+        "original_query": query,
+    }))
 }
 
 // --- CRUD ----------------------------------------------------------------
