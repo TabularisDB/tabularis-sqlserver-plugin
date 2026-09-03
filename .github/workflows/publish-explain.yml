@@ -16,15 +16,19 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # See ci.yml: pnpm comes from the pinned "packageManager" field, not
+      # from the Corepack copy bundled with Node.
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          package_json_file: explain/package.json
+
       - name: Setup Node
         uses: actions/setup-node@v5
         with:
           # pnpm 11.23 requires Node 22.13 or newer.
           node-version: "22.13"
           registry-url: "https://registry.npmjs.org"
-
-      - name: Enable pnpm
-        run: corepack enable
 
       - name: Check tag matches package and plugin versions
         run: |

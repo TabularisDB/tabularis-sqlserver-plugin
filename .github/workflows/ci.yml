@@ -44,14 +44,20 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # Installs the pnpm version pinned by "packageManager" in
+      # explain/package.json. Corepack is not used because the copy bundled
+      # with Node 22.13 carries stale npm registry signing keys and fails
+      # with "Cannot find matching keyid" when it resolves pnpm.
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          package_json_file: explain/package.json
+
       - name: Setup Node
         uses: actions/setup-node@v5
         with:
           # pnpm 11.23 requires Node 22.13 or newer.
           node-version: "22.13"
-
-      - name: Enable pnpm
-        run: corepack enable
 
       - name: Install dependencies
         working-directory: explain

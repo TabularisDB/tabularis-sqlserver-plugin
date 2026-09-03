@@ -85,6 +85,14 @@ jobs:
             echo "present=false" >> "$GITHUB_OUTPUT"
           fi
 
+      # See ci.yml: pnpm comes from the pinned "packageManager" field, not
+      # from the Corepack copy bundled with Node.
+      - name: Setup pnpm
+        if: steps.explain.outputs.present == 'true'
+        uses: pnpm/action-setup@v4
+        with:
+          package_json_file: explain/package.json
+
       - name: Setup Node
         if: steps.ui.outputs.present == 'true' || steps.explain.outputs.present == 'true'
         uses: actions/setup-node@v5
@@ -99,11 +107,6 @@ jobs:
         run: |
           npm install --no-audit --no-fund
           npm run build
-
-      - name: Enable pnpm
-        if: steps.explain.outputs.present == 'true'
-        shell: bash
-        run: corepack enable
 
       - name: Build EXPLAIN parser
         if: steps.explain.outputs.present == 'true'
