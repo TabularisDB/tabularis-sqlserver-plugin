@@ -12,15 +12,44 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Check tag matches manifest version
+      - name: Check tag matches manifest and EXPLAIN package versions
         run: |
           TAG_VERSION="${GITHUB_REF_NAME#v}"
           TABULARIUM_VERSION=$(jq -r .version .tabularium)
+          EXPLAIN_VERSION=$(jq -r .version explain/package.json)
 
           if [ "$TAG_VERSION" != "$TABULARIUM_VERSION" ]; then
             echo "::error::Tag version ($TAG_VERSION) does not match .tabularium version ($TABULARIUM_VERSION)"
             exit 1
           fi
+          # The plugin binaries and the npm parser package ship from the same
+          # tag, so their versions must agree before anything is built.
+          if [ "$TAG_VERSION" != "$EXPLAIN_VERSION" ]; then
+            echo "::error::Tag version ($TAG_VERSION) does not match explain/package.json version ($EXPLAIN_VERSION)"
+            exit 1
+          fi
+
+      # See ci.yml: pnpm comes from the pinned "packageManager" field, not
+      # from the Corepack copy bundled with Node.
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          package_json_file: explain/package.json
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          # pnpm 11.23 requires Node 22.13 or newer.
+          node-version: "22.13"
+
+      # Typecheck and test the parser before any platform binary is built so a
+      # broken parser fails the whole release instead of only the npm half.
+      - name: Typecheck and test EXPLAIN parser
+        working-directory: explain
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm typecheck
+          pnpm test
 
   build:
     name: ${{ matrix.platform-label }}
@@ -175,6 +204,59 @@ jobs:
           name: sqlserver-plugin-${{ matrix.platform-label }}
           path: sqlserver-plugin-${{ matrix.platform-label }}.zip
           retention-days: 1
+
+  publish-explain:
+    name: Publish EXPLAIN parser to npm
+    # Runs only once every platform binary has built, so the npm package and
+    # the GitHub release are cut from the same tag in the same run.
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          package_json_file: explain/package.json
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22.13"
+          registry-url: "https://registry.npmjs.org"
+
+      # npm never accepts a second publish of an existing version, so a re-run
+      # of this workflow (or a recreated tag) must not fail the release on the
+      # npm half once the package is already out.
+      - name: Check whether this version is already on npm
+        id: npm
+        working-directory: explain
+        run: |
+          NAME=$(jq -r .name package.json)
+          VERSION=$(jq -r .version package.json)
+          if npm view "$NAME@$VERSION" version >/dev/null 2>&1; then
+            echo "::warning::$NAME@$VERSION is already published on npm; skipping publish"
+            echo "published=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "published=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install and build
+        if: steps.npm.outputs.published == 'false'
+        working-directory: explain
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+
+      - name: Publish
+        if: steps.npm.outputs.published == 'false'
+        working-directory: explain
+        run: pnpm publish --access public --provenance --no-git-checks
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
   release:
     name: Publish GitHub release

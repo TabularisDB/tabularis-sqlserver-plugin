@@ -208,8 +208,9 @@ jobs:
         id: baseline
         run: |
           git fetch origin main --tags --quiet
-          # Only plugin release tags (v*) are a baseline; the explain-v* tags
-          # version the npm parser package and share the same commits.
+          # Only plugin release tags (v*) are a baseline. The npm parser
+          # package ships from the same v* tag; legacy explain-v* tags must
+          # not be picked up here.
           TAG=$(git -C . describe --tags --abbrev=0 --match 'v[0-9]*' origin/main 2>/dev/null || true)
           if [ -n "$TAG" ]; then
             BASELINE="${TAG#v}"

@@ -429,6 +429,15 @@ so a missing or ambiguous label fails the version-suggestion check.
 | `docs`, `style`, `chore`, `test`, `ci`, `build` | none |
 | any type with `!` or a `BREAKING CHANGE:` footer | major |
 
+### Releasing
+
+A release is a single `v<version>` tag. The Release workflow builds the plugin
+binaries for every platform, publishes the GitHub release, and publishes the
+`@tabularis/explain-sqlserver` npm package from the same commit. Before
+tagging, set the same version in `.tabularium`, `Cargo.toml`, and
+`explain/package.json`; the workflow rejects a tag that disagrees with the
+manifest or the npm package.
+
 Before opening a PR, run:
 
 ```bash

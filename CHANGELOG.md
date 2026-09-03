@@ -52,7 +52,8 @@ published. Publication is tracked in
   native type mappings, synchronized data-type declarations, and release
   workflows for five desktop platforms.
 - A browser-safe SQL Server SHOWPLAN parser built as both the plugin IIFE and
-  the independently publishable `@tabularis/explain-sqlserver` package.
+  the `@tabularis/explain-sqlserver` npm package, published from the same
+  release tag as the plugin binaries.
 - CI checks for formatting, Clippy, unit and live SQL Server 2022 tests,
   manifest and Markdown validation, Conventional Commit pull-request titles,
   version suggestions, dependency updates, RustSec advisories, release

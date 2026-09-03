@@ -419,8 +419,12 @@ The first form must survive tree shaking, hence the explicit `sideEffects`
 metadata. The package's ESM entry registers once on evaluation and exports the
 parser and descriptor. The IIFE entry does not self-register.
 
-Publishing is independent from the Rust release and is triggered by an
-`explain-v*` tag. A Rust release does not force an npm publish, nor vice versa.
+Publishing is part of the plugin release: the `v*` tag that builds the
+platform binaries also publishes the npm package, from the same commit and
+with the same version. The release workflow refuses a tag whose version does
+not match both `.tabularium` and `explain/package.json`, and the npm publish
+runs only after every platform binary has built. There is no separate
+`explain-v*` tag.
 
 ## 8. SQL Server parser semantics (`SS-034`)
 
