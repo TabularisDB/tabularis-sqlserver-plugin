@@ -1,0 +1,33 @@
+{
+  "id": 1,
+  "jsonrpc": "2.0",
+  "result": [
+    {
+      "error": null,
+      "execution_time_ms": 1.163297,
+      "result": {
+        "affected_rows": 0,
+        "columns": [
+          "id"
+        ],
+        "pagination": {
+          "has_more": true,
+          "page": 1,
+          "page_size": 1,
+          "total_rows": null
+        },
+        "rows": [
+          [
+            1
+          ]
+        ],
+        "truncated": true
+      }
+    },
+    {
+      "error": "SQL Server error 208: Invalid object name 'ss044.missing_table'. [statement failure; severity 16; state 1; line 1]",
+      "execution_time_ms": 0.571415,
+      "result": null
+    }
+  ]
+}

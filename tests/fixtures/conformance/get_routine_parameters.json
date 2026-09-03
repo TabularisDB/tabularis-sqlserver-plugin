@@ -1,0 +1,18 @@
+{
+  "id": 1,
+  "jsonrpc": "2.0",
+  "result": [
+    {
+      "data_type": "int",
+      "mode": "IN",
+      "name": "@input",
+      "ordinal_position": 1
+    },
+    {
+      "data_type": "nvarchar(20)",
+      "mode": "INOUT",
+      "name": "@output",
+      "ordinal_position": 2
+    }
+  ]
+}

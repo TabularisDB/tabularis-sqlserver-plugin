@@ -6,8 +6,25 @@ on:
       - "v*"
 
 jobs:
+  validate:
+    name: Validate release version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Check tag matches manifest version
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          TABULARIUM_VERSION=$(jq -r .version .tabularium)
+
+          if [ "$TAG_VERSION" != "$TABULARIUM_VERSION" ]; then
+            echo "::error::Tag version ($TAG_VERSION) does not match .tabularium version ($TABULARIUM_VERSION)"
+            exit 1
+          fi
+
   build:
     name: ${{ matrix.platform-label }}
+    needs: validate
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -41,7 +58,7 @@ jobs:
             binary-suffix: ".exe"
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -58,11 +75,30 @@ jobs:
             echo "present=false" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Check for EXPLAIN parser
+        id: explain
+        shell: bash
+        run: |
+          if [ -f explain/package.json ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # See ci.yml: pnpm comes from the pinned "packageManager" field, not
+      # from the Corepack copy bundled with Node.
+      - name: Setup pnpm
+        if: steps.explain.outputs.present == 'true'
+        uses: pnpm/action-setup@v4
+        with:
+          package_json_file: explain/package.json
+
       - name: Setup Node
-        if: steps.ui.outputs.present == 'true'
+        if: steps.ui.outputs.present == 'true' || steps.explain.outputs.present == 'true'
         uses: actions/setup-node@v5
         with:
-          node-version: "20"
+          # pnpm 11.23 requires Node 22.13 or newer.
+          node-version: "22.13"
 
       - name: Build UI
         if: steps.ui.outputs.present == 'true'
@@ -71,6 +107,14 @@ jobs:
         run: |
           npm install --no-audit --no-fund
           npm run build
+
+      - name: Build EXPLAIN parser
+        if: steps.explain.outputs.present == 'true'
+        shell: bash
+        working-directory: explain
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm run build
 
       - name: Install cross (linux-arm64 only)
         if: matrix.cross
@@ -98,6 +142,10 @@ jobs:
             mkdir -p "$STAGE/ui/dist"
             cp ui/dist/index.js "$STAGE/ui/dist/"
           fi
+          if [ -f explain/dist/index.iife.js ]; then
+            mkdir -p "$STAGE/explain/dist"
+            cp explain/dist/index.iife.js "$STAGE/explain/dist/"
+          fi
           (cd "$STAGE" && zip -r ../sqlserver-plugin-${{ matrix.platform-label }}.zip .)
 
       - name: Package (windows)
@@ -114,6 +162,10 @@ jobs:
           if (Test-Path "ui\dist\index.js") {
             New-Item -ItemType Directory -Force -Path "$stage\ui\dist" | Out-Null
             Copy-Item "ui\dist\index.js" "$stage\ui\dist"
+          }
+          if (Test-Path "explain\dist\index.iife.js") {
+            New-Item -ItemType Directory -Force -Path "$stage\explain\dist" | Out-Null
+            Copy-Item "explain\dist\index.iife.js" "$stage\explain\dist"
           }
           Compress-Archive -Path "$stage\*" -DestinationPath "sqlserver-plugin-${{ matrix.platform-label }}.zip"
 
@@ -132,13 +184,24 @@ jobs:
       contents: write
     steps:
       - name: Checkout (for the .tabularium manifest asset)
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Download all build artifacts
         uses: actions/download-artifact@v5
         with:
           path: artifacts
           merge-multiple: true
+
+      - name: Detect prerelease from tag
+        id: meta
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          if [[ "$TAG_NAME" == *-* ]]; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Publish release
         uses: softprops/action-gh-release@v2
@@ -148,3 +211,5 @@ jobs:
           files: |
             artifacts/*.zip
             .tabularium
+          prerelease: ${{ steps.meta.outputs.prerelease == 'true' }}
+          make_latest: ${{ steps.meta.outputs.prerelease == 'false' }}

@@ -1,0 +1,14 @@
+{
+  "id": 1,
+  "jsonrpc": "2.0",
+  "result": [
+    {
+      "column_name": "parent_id",
+      "name": "fk_child_parent",
+      "on_delete": "SET NULL",
+      "on_update": "NO ACTION",
+      "ref_column": "id",
+      "ref_table": "parent"
+    }
+  ]
+}

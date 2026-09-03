@@ -1,9 +1,73 @@
 {
-  "$schema": "https://tabularis.dev/schemas/plugin-manifest.json",
-  "id": "sqlserver",
-  "name": "SQL Server",
-  "version": "0.1.0",
-  "description": "Microsoft SQL Server driver for Tabularis",
+  "$schema": "https://registry.tabularis.dev/manifest.schema.json?kind=driver",
+  "name": "sqlserver",
+  "version": "1.0.0-beta.1",
+  "description": "Full-featured Microsoft SQL Server driver for Tabularis with schema browsing, query execution, visual plans, type-aware row editing, DDL, routines, triggers, BLOBs, and database-user management.",
+  "category": "database",
+  "tags": ["driver", "sqlserver", "mssql", "sql", "relational", "database-driver"],
+  "license": "Apache-2.0",
+  "icon": "https://raw.githubusercontent.com/TabularisDB/tabularis-sqlserver-plugin/main/sqlserver-icon.svg",
+  "color": "#CC2927",
+  "screenshots": [
+    {
+      "url": "https://raw.githubusercontent.com/TabularisDB/tabularis-sqlserver-plugin/main/assets/screenshots/01-fresh-install.png",
+      "caption": "Database Manager on first launch",
+      "alt": "Tabularis Database Manager showing no active connections"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/TabularisDB/tabularis-sqlserver-plugin/main/assets/screenshots/02-database-picker.png",
+      "caption": "SQL Server listed in the database picker",
+      "alt": "Choose a database dialog showing SQL Server installed under SQL and Relational categories"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/TabularisDB/tabularis-sqlserver-plugin/main/assets/screenshots/03-connection-form.png",
+      "caption": "Connection configuration form",
+      "alt": "SQL Server connection form with connection string, host, port, username, password, and database fields filled in"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/TabularisDB/tabularis-sqlserver-plugin/main/assets/screenshots/04-test-connection-success.png",
+      "caption": "Successful connection test",
+      "alt": "SQL Server connection form showing a green Connection successful message"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/TabularisDB/tabularis-sqlserver-plugin/main/assets/screenshots/05-connections-list.png",
+      "caption": "Saved connection in the Database Manager",
+      "alt": "Database Manager showing one saved SQL Server connection card"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/TabularisDB/tabularis-sqlserver-plugin/main/assets/screenshots/06-schema-browser.png",
+      "caption": "Multi-schema browsing with tables, views, routines, and triggers",
+      "alt": "Sidebar schema tree showing SQL Server schemas with tables, views, routines, and triggers"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/TabularisDB/tabularis-sqlserver-plugin/main/assets/screenshots/07-table-data.png",
+      "caption": "Data grid with filtering and sorting",
+      "alt": "SQL Server customer table data grid filtered to the West region"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/TabularisDB/tabularis-sqlserver-plugin/main/assets/screenshots/08-visual-explain.png",
+      "caption": "Visual EXPLAIN for a SQL Server SHOWPLAN",
+      "alt": "Visual EXPLAIN graph showing SQL Server SELECT, hash match, clustered index scan, and index seek operators"
+    }
+  ],
+  "readme": "README.md",
+  "homepage": "https://github.com/TabularisDB/tabularis-sqlserver-plugin",
+  "documentation_url": "https://github.com/TabularisDB/tabularis-sqlserver-plugin#readme",
+  "min_runtime_version": "0.23.0",
+  "support": {
+    "issues_url": "https://github.com/TabularisDB/tabularis-sqlserver-plugin/issues"
+  },
+  "kind": "driver",
+  "engine": "sqlserver",
+  "explain_parsers": [
+    {
+      "engine": "sqlserver",
+      "format": "sqlserver-showplan-xml",
+      "label": "SQL Server SHOWPLAN XML",
+      "module": "explain/dist/index.iife.js"
+    }
+  ],
+  "paradigms": ["relational"],
   "default_port": 1433,
   "default_username": "sa",
   "executable": "sqlserver-plugin",
@@ -13,6 +77,7 @@
     "routines": true,
     "routine_management": true,
     "triggers": true,
+    "user_management": true,
     "file_based": false,
     "folder_based": false,
     "no_connection_required": false,
@@ -31,6 +96,59 @@
     "supports_ssl": true,
     "explain": true
   },
+  "type_mappings": {
+    "TIMESTAMP": "DATETIME2",
+    "BOOLEAN": "BIT",
+    "TEXT": "NVARCHAR(MAX)",
+    "BLOB": "VARBINARY(MAX)",
+    "SERIAL": "INT IDENTITY(1,1)",
+    "UUID": "UNIQUEIDENTIFIER",
+    "JSON": "NVARCHAR(MAX)"
+  },
+  "settings": [
+    {
+      "key": "max_pool_size",
+      "label": "Maximum Pool Size",
+      "type": "number",
+      "default": 10,
+      "description": "Maximum number of SQL Server sessions in each connection pool."
+    },
+    {
+      "key": "connect_timeout_seconds",
+      "label": "Connection Timeout (seconds)",
+      "type": "number",
+      "default": 15,
+      "description": "Maximum time allowed to establish and authenticate a new SQL Server session."
+    },
+    {
+      "key": "query_timeout_seconds",
+      "label": "Query Timeout (seconds)",
+      "type": "number",
+      "default": 0,
+      "description": "Maximum query duration; 0 disables the query timeout."
+    },
+    {
+      "key": "application_name",
+      "label": "Application Name",
+      "type": "string",
+      "default": "Tabularis",
+      "description": "Application name reported for SQL Server sessions."
+    },
+    {
+      "key": "trust_server_certificate",
+      "label": "Trust Server Certificate",
+      "type": "boolean",
+      "default": false,
+      "description": "Accept a self-signed server certificate without validation. Use only for trusted development servers."
+    },
+    {
+      "key": "pool_idle_eviction_minutes",
+      "label": "Pool Idle Eviction (minutes)",
+      "type": "number",
+      "default": 10,
+      "description": "Interval for evicting connection pools that have no checked-out sessions."
+    }
+  ],
   "data_types": [
     {
       "name": "TINYINT",
@@ -100,53 +218,53 @@
     },
     {
       "name": "CHAR",
-      "category": "text",
+      "category": "string",
       "requires_length": true,
       "requires_precision": false,
       "default_length": "1"
     },
     {
       "name": "VARCHAR",
-      "category": "text",
+      "category": "string",
       "requires_length": true,
       "requires_precision": false,
       "default_length": "255"
     },
     {
       "name": "VARCHAR(MAX)",
-      "category": "text",
+      "category": "string",
       "requires_length": false,
       "requires_precision": false
     },
     {
       "name": "TEXT",
-      "category": "text",
+      "category": "string",
       "requires_length": false,
       "requires_precision": false
     },
     {
       "name": "NCHAR",
-      "category": "text",
+      "category": "string",
       "requires_length": true,
       "requires_precision": false,
       "default_length": "1"
     },
     {
       "name": "NVARCHAR",
-      "category": "text",
+      "category": "string",
       "requires_length": true,
       "requires_precision": false,
       "default_length": "255"
     },
     {
       "name": "NVARCHAR(MAX)",
-      "category": "text",
+      "category": "string",
       "requires_length": false,
       "requires_precision": false
     },
     {
       "name": "NTEXT",
-      "category": "text",
+      "category": "string",
       "requires_length": false,
       "requires_precision": false
     },
@@ -178,37 +296,37 @@
     },
     {
       "name": "DATE",
-      "category": "datetime",
+      "category": "date",
       "requires_length": false,
       "requires_precision": false
     },
     {
       "name": "TIME",
-      "category": "datetime",
+      "category": "date",
       "requires_length": false,
       "requires_precision": false
     },
     {
       "name": "DATETIME",
-      "category": "datetime",
+      "category": "date",
       "requires_length": false,
       "requires_precision": false
     },
     {
       "name": "DATETIME2",
-      "category": "datetime",
+      "category": "date",
       "requires_length": false,
       "requires_precision": false
     },
     {
       "name": "SMALLDATETIME",
-      "category": "datetime",
+      "category": "date",
       "requires_length": false,
       "requires_precision": false
     },
     {
       "name": "DATETIMEOFFSET",
-      "category": "datetime",
+      "category": "date",
       "requires_length": false,
       "requires_precision": false
     },

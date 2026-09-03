@@ -6,15 +6,17 @@ use std::collections::HashMap;
 use mssql_tiberius_bridge::ToSql;
 
 use crate::driver::helpers::{
-    bracket_quote, build_delete_composite_sql, build_update_composite_sql, qualify,
+    bracket_quote, build_delete_composite_sql, build_insert_sql_with_expressions,
+    build_update_composite_sql_with_expression, qualify, raw_sql_expression,
 };
 use crate::driver::{
-    acquire, ddl, execute_on_connection, explain, helpers, introspection, routines, triggers,
+    acquire, blob, ddl, execute_on_connection, explain, helpers, introspection, routines, triggers,
+    users,
 };
 use crate::models::{
-    AiSchemaContext, BatchStatementResult, ColumnDefinition, ConnectionParams, ForeignKey, Index,
-    PkMap, QueryResult, RoutineCallArg, RoutineInfo, RoutineParameter, TableColumn, TableInfo,
-    TableSchema, TriggerInfo, ViewInfo,
+    AiSchemaContext, BatchStatementResult, ColumnDefinition, ConnectionParams, DbPrivilegeCatalog,
+    DbUserGrantSet, DbUserInfo, ForeignKey, Index, PkMap, QueryResult, RoutineCallArg, RoutineInfo,
+    RoutineParameter, TableColumn, TableInfo, TableSchema, TriggerInfo, ViewInfo,
 };
 
 pub async fn test_connection(params: &ConnectionParams) -> Result<(), String> {
@@ -107,6 +109,26 @@ pub async fn get_indexes(
 
 // --- Views --------------------------------------------------------------
 
+pub(crate) fn build_create_view_sql(
+    view_name: &str,
+    definition: &str,
+    schema: Option<&str>,
+) -> String {
+    format!("CREATE VIEW {} AS {definition}", qualify(schema, view_name))
+}
+
+pub(crate) fn build_alter_view_sql(
+    view_name: &str,
+    definition: &str,
+    schema: Option<&str>,
+) -> String {
+    format!("ALTER VIEW {} AS {definition}", qualify(schema, view_name))
+}
+
+pub(crate) fn build_drop_view_sql(view_name: &str, schema: Option<&str>) -> String {
+    format!("DROP VIEW IF EXISTS {}", qualify(schema, view_name))
+}
+
 pub async fn get_views(
     params: &ConnectionParams,
     schema: Option<&str>,
@@ -142,11 +164,7 @@ pub async fn create_view(
     definition: &str,
     schema: Option<&str>,
 ) -> Result<(), String> {
-    let sql = format!(
-        "CREATE VIEW {} AS {}",
-        qualify(schema, view_name),
-        definition
-    );
+    let sql = build_create_view_sql(view_name, definition, schema);
     let mut conn = acquire(params).await?;
     conn.simple_query(sql)
         .await
@@ -161,11 +179,7 @@ pub async fn alter_view(
     definition: &str,
     schema: Option<&str>,
 ) -> Result<(), String> {
-    let sql = format!(
-        "ALTER VIEW {} AS {}",
-        qualify(schema, view_name),
-        definition
-    );
+    let sql = build_alter_view_sql(view_name, definition, schema);
     let mut conn = acquire(params).await?;
     conn.simple_query(sql)
         .await
@@ -179,7 +193,7 @@ pub async fn drop_view(
     view_name: &str,
     schema: Option<&str>,
 ) -> Result<(), String> {
-    let sql = format!("DROP VIEW IF EXISTS {}", qualify(schema, view_name));
+    let sql = build_drop_view_sql(view_name, schema);
     let mut conn = acquire(params).await?;
     conn.simple_query(sql)
         .await
@@ -266,6 +280,88 @@ pub async fn drop_routine(
     execute_query(params, &sql, None, 1).await.map(|_| ())
 }
 
+// --- Database users and privileges ------------------------------------
+
+pub fn get_db_privilege_catalog() -> DbPrivilegeCatalog {
+    users::privilege_catalog()
+}
+
+pub async fn get_db_users(params: &ConnectionParams) -> Result<Vec<DbUserInfo>, String> {
+    let mut conn = acquire(params).await?;
+    users::get_users(&mut conn).await
+}
+
+pub async fn create_db_user(
+    params: &ConnectionParams,
+    user: &str,
+    login: &str,
+    password: &str,
+) -> Result<(), String> {
+    let mut conn = acquire(params).await?;
+    users::create_user(&mut conn, user, login, password).await
+}
+
+pub async fn drop_db_user(
+    params: &ConnectionParams,
+    user: &str,
+    login: &str,
+) -> Result<(), String> {
+    let mut conn = acquire(params).await?;
+    users::drop_user(&mut conn, user, login).await
+}
+
+pub async fn set_db_user_password(
+    params: &ConnectionParams,
+    user: &str,
+    login: &str,
+    password: &str,
+) -> Result<(), String> {
+    let mut conn = acquire(params).await?;
+    users::set_password(&mut conn, user, login, password).await
+}
+
+pub async fn get_db_user_grants(
+    params: &ConnectionParams,
+    user: &str,
+    login: &str,
+) -> Result<Vec<String>, String> {
+    let mut conn = acquire(params).await?;
+    users::get_grants(&mut conn, user, login).await
+}
+
+pub async fn get_db_user_privileges(
+    params: &ConnectionParams,
+    user: &str,
+    login: &str,
+) -> Result<Vec<DbUserGrantSet>, String> {
+    let mut conn = acquire(params).await?;
+    users::get_privileges(&mut conn, user, login).await
+}
+
+#[allow(clippy::too_many_arguments)]
+pub async fn apply_db_user_privileges(
+    params: &ConnectionParams,
+    user: &str,
+    login: &str,
+    database: Option<&str>,
+    table: Option<&str>,
+    privileges: &[String],
+    grant: bool,
+) -> Result<(), String> {
+    let mut conn = acquire(params).await?;
+    users::apply_privileges(
+        &mut conn,
+        params.database.primary(),
+        user,
+        login,
+        database,
+        table,
+        privileges,
+        grant,
+    )
+    .await
+}
+
 // --- Query execution ---------------------------------------------------
 
 pub async fn execute_query(
@@ -294,11 +390,9 @@ pub async fn execute_batch(
     Ok(results)
 }
 
-/// Run SHOWPLAN_XML / STATISTICS XML and parse the document into the visual
-/// plan model the frontend renders. Unlike the built-in driver — whose raw
-/// XML is parsed by `@tabularis/explain` in the frontend — a plugin's
-/// `explain_query` result passes through to the frontend untouched, so the
-/// parsing happens here.
+/// Capture SHOWPLAN_XML / STATISTICS XML and return the raw plugin EXPLAIN
+/// shape. Compatible hosts dispatch the tagged payload to the parser declared
+/// in `.tabularium` instead of interpreting it in this Rust process.
 pub async fn explain_query(
     params: &ConnectionParams,
     query: &str,
@@ -306,7 +400,12 @@ pub async fn explain_query(
 ) -> Result<serde_json::Value, String> {
     let mut conn = acquire(params).await?;
     let payload = explain::explain_showplan_xml(&mut conn, query, analyze).await?;
-    crate::driver::showplan::parse_showplan_xml(&payload, query)
+    Ok(serde_json::json!({
+        "engine": "sqlserver",
+        "format": "sqlserver-showplan-xml",
+        "payload": payload,
+        "original_query": query,
+    }))
 }
 
 // --- CRUD ----------------------------------------------------------------
@@ -338,24 +437,35 @@ pub async fn insert_record(
         .map(|id| columns.iter().any(|c| c.eq_ignore_ascii_case(id)))
         .unwrap_or(false);
 
-    let qualified = helpers::qualify(schema, table);
-    let sql = helpers::build_insert_sql(
-        &qualified,
-        &columns,
-        if needs_identity_insert {
-            Some(qualified.as_str())
+    // Most values become parameters. The host may explicitly mark a value as
+    // raw SQL (`{ "value": "...", "is_raw": true }`) for server-side type
+    // constructors such as hierarchyid::Parse; raw values consume no marker.
+    let mut owned_params: Vec<Box<dyn mssql_tiberius_bridge::ToSql>> = Vec::new();
+    let mut expressions = Vec::with_capacity(columns.len());
+    for column in &columns {
+        let value = &data[column];
+        if let Some(expression) = raw_sql_expression(value)? {
+            expressions.push(expression.to_string());
         } else {
-            None
-        },
-    );
-
-    // Map each JSON value to a typed SQL parameter. Owned boxes live
-    // for the duration of the call so the borrowed `&dyn ToSql` slice is
-    // valid.
-    let owned_params: Vec<Box<dyn mssql_tiberius_bridge::ToSql>> = columns
+            owned_params.push(helpers::value_to_sql_param(value)?);
+            expressions.push(format!("@P{}", owned_params.len()));
+        }
+    }
+    let sql = if expressions
         .iter()
-        .map(|column| helpers::value_to_sql_param(&data[column]))
-        .collect::<Result<_, _>>()?;
+        .enumerate()
+        .all(|(index, expression)| expression == &format!("@P{}", index + 1))
+    {
+        helpers::build_insert_sql(schema, table, &columns, needs_identity_insert)
+    } else {
+        build_insert_sql_with_expressions(
+            schema,
+            table,
+            &columns,
+            &expressions,
+            needs_identity_insert,
+        )
+    };
     let params_slice: Vec<&dyn mssql_tiberius_bridge::ToSql> =
         owned_params.iter().map(|b| b.as_ref()).collect();
 
@@ -380,11 +490,28 @@ pub async fn update_record(
         .iter()
         .map(|(column, _)| (*column).clone())
         .collect();
-    let sql = build_update_composite_sql(schema, table, col_name, &pk_columns)
-        .ok_or_else(|| "SQL Server: UPDATE requires at least one primary-key column".to_string())?;
-
     let mut owned_params = Vec::with_capacity(primary_keys.len() + 1);
-    owned_params.push(helpers::value_to_sql_param(&new_val)?);
+    let value_expression = if let Some(expression) = raw_sql_expression(&new_val)? {
+        expression.to_string()
+    } else {
+        owned_params.push(helpers::value_to_sql_param(&new_val)?);
+        "@P1".to_string()
+    };
+    let first_pk_marker = owned_params.len() + 1;
+    let sql = if value_expression == "@P1" {
+        helpers::build_update_composite_sql(schema, table, col_name, &pk_columns)
+    } else {
+        build_update_composite_sql_with_expression(
+            schema,
+            table,
+            col_name,
+            &value_expression,
+            &pk_columns,
+            first_pk_marker,
+        )
+    }
+    .ok_or_else(|| "SQL Server: UPDATE requires at least one primary-key column".to_string())?;
+
     for (_, value) in primary_keys {
         owned_params.push(helpers::value_to_sql_param(value)?);
     }
@@ -425,6 +552,37 @@ pub async fn delete_record(
         .await
         .map_err(|error| error.to_string())?;
     crate::driver::affected_rows_from_query(result)
+}
+
+// --- BLOB export and preview --------------------------------------------
+
+pub async fn save_blob_to_file(
+    params: &ConnectionParams,
+    table: &str,
+    col_name: &str,
+    pk_map: &PkMap,
+    schema: Option<&str>,
+    file_path: &str,
+) -> Result<(), String> {
+    blob::validate_writable_file_path(file_path)?;
+    let bytes = blob::fetch_blob_bytes(params, table, col_name, pk_map, schema, None).await?;
+    tokio::fs::write(file_path, bytes)
+        .await
+        .map_err(|error| format!("Failed to write SQL Server BLOB to '{file_path}': {error}"))
+}
+
+pub async fn fetch_blob_as_data_url(
+    params: &ConnectionParams,
+    table: &str,
+    col_name: &str,
+    pk_map: &PkMap,
+    schema: Option<&str>,
+    max_blob_size: u64,
+) -> Result<String, String> {
+    let bytes =
+        blob::fetch_blob_bytes(params, table, col_name, pk_map, schema, Some(max_blob_size))
+            .await?;
+    blob::encode_blob_full(&bytes, max_blob_size)
 }
 
 // --- DDL generation -----------------------------------------------------
@@ -516,22 +674,38 @@ pub fn get_create_foreign_key_sql(
     )
 }
 
+pub(crate) fn build_drop_index_sql(table: &str, index_name: &str, schema: Option<&str>) -> String {
+    format!(
+        "DROP INDEX {} ON {}",
+        bracket_quote(index_name),
+        qualify(schema, table),
+    )
+}
+
 pub async fn drop_index(
     params: &ConnectionParams,
     table: &str,
     index_name: &str,
     schema: Option<&str>,
 ) -> Result<(), String> {
-    let sql = format!(
-        "DROP INDEX {} ON {}",
-        bracket_quote(index_name),
-        qualify(schema, table),
-    );
+    let sql = build_drop_index_sql(table, index_name, schema);
     let mut conn = acquire(params).await?;
     conn.execute(sql, &[])
         .await
         .map_err(|error| error.to_string())?;
     Ok(())
+}
+
+pub(crate) fn build_drop_foreign_key_sql(
+    table: &str,
+    fk_name: &str,
+    schema: Option<&str>,
+) -> String {
+    format!(
+        "ALTER TABLE {} DROP CONSTRAINT {}",
+        qualify(schema, table),
+        bracket_quote(fk_name),
+    )
 }
 
 pub async fn drop_foreign_key(
@@ -540,11 +714,7 @@ pub async fn drop_foreign_key(
     fk_name: &str,
     schema: Option<&str>,
 ) -> Result<(), String> {
-    let sql = format!(
-        "ALTER TABLE {} DROP CONSTRAINT {}",
-        qualify(schema, table),
-        bracket_quote(fk_name),
-    );
+    let sql = build_drop_foreign_key_sql(table, fk_name, schema);
     let mut conn = acquire(params).await?;
     conn.execute(sql, &[])
         .await

@@ -1,0 +1,16 @@
+{
+  "id": 1,
+  "jsonrpc": "2.0",
+  "result": [
+    {
+      "definition": null,
+      "name": "drop_proc",
+      "routine_type": "PROCEDURE"
+    },
+    {
+      "definition": null,
+      "name": "sample_proc",
+      "routine_type": "PROCEDURE"
+    }
+  ]
+}

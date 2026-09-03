@@ -10,8 +10,10 @@ use deadpool::managed::Pool as DeadPool;
 use once_cell::sync::Lazy;
 use tokio::sync::RwLock;
 
+use crate::connection::resolve_connection_params;
 use crate::driver::pool::{build_config, BridgeManager};
 use crate::models::ConnectionParams;
+use crate::settings;
 
 pub type SqlServerPool = DeadPool<BridgeManager>;
 type SqlServerPoolMap = Arc<RwLock<HashMap<String, SqlServerPool>>>;
@@ -36,7 +38,7 @@ fn build_connection_key(params: &ConnectionParams) -> String {
             "{}:{}:{}:{}:{}",
             params.driver,
             params.host.as_deref().unwrap_or("localhost"),
-            params.port.unwrap_or(0),
+            params.port.unwrap_or(1433),
             params.username.as_deref().unwrap_or(""),
             params.database
         )
@@ -54,26 +56,75 @@ fn startup_script(params: &ConnectionParams) -> Option<String> {
 }
 
 pub async fn get_sqlserver_pool(params: &ConnectionParams) -> Result<SqlServerPool, String> {
-    let key = build_connection_key(params);
+    let params = resolve_connection_params(params)?;
+    let key = build_connection_key(&params);
     let mut pools = SQLSERVER_POOLS.write().await;
     if let Some(pool) = pools.get(&key).cloned() {
         return Ok(pool);
     }
 
-    let manager = BridgeManager::new(build_config(params)?, startup_script(params));
+    // A pool snapshots process settings. The host initializes the process
+    // before opening connections, and live pools are never mutated in place.
+    let settings = settings::current();
+    let manager = BridgeManager::new(
+        build_config(&params, &settings)?,
+        startup_script(&params),
+        params.ssl_mode.as_deref().unwrap_or("prefer"),
+        &settings,
+    );
     let pool = DeadPool::builder(manager)
-        .max_size(10)
+        .max_size(settings.max_pool_size)
         .build()
         .map_err(|error| error.to_string())?;
     pools.insert(key, pool.clone());
     Ok(pool)
 }
 
+/// Remove a cached pool after checkout failed. This lets corrected connection
+/// parameters replace a failed lazy manager under the same connection id.
+pub async fn remove_sqlserver_pool(params: &ConnectionParams) {
+    let Ok(params) = resolve_connection_params(params) else {
+        return;
+    };
+    SQLSERVER_POOLS
+        .write()
+        .await
+        .remove(&build_connection_key(&params));
+}
+
 /// Drop pools that currently have no checked-out connections. Called
 /// periodically so long-idle sessions don't linger for the plugin's lifetime.
 pub async fn cleanup_idle_pools() {
     let mut pools = SQLSERVER_POOLS.write().await;
-    pools.retain(|_, pool| pool.status().size > pool.status().available);
+    pools.retain(|_, pool| {
+        let status = pool.status();
+        let has_checked_out_connection = status.size > status.available;
+        if !has_checked_out_connection {
+            // Explicit close makes the server-side sessions disappear now;
+            // removing the last registry handle alone would rely on drop
+            // timing inside deadpool.
+            pool.close();
+        }
+        has_checked_out_connection
+    });
+}
+
+/// Close every cached pool and remove it from the process-wide registry.
+pub async fn shutdown() {
+    let pools: Vec<_> = SQLSERVER_POOLS
+        .write()
+        .await
+        .drain()
+        .map(|(_, pool)| pool)
+        .collect();
+    for pool in pools {
+        pool.close();
+    }
+}
+
+#[cfg(test)]
+pub async fn pool_count() -> usize {
+    SQLSERVER_POOLS.read().await.len()
 }
 
 #[cfg(test)]
@@ -104,5 +155,42 @@ mod tests {
         p.ssl_mode = Some("require".into());
         let key = build_connection_key(&p);
         assert_eq!(key, "sqlserver:localhost:1433:sa:master:ssl:require");
+    }
+
+    #[test]
+    fn database_is_part_of_the_key_and_identical_params_are_stable() {
+        let master = params(Some("ss045-key"));
+        let identical = master.clone();
+        let mut other_database = master.clone();
+        other_database.database = crate::models::DatabaseSelection::Single("tempdb".into());
+
+        assert_eq!(
+            build_connection_key(&master),
+            build_connection_key(&identical)
+        );
+        assert_ne!(
+            build_connection_key(&master),
+            build_connection_key(&other_database)
+        );
+    }
+
+    #[test]
+    fn equivalent_discrete_and_connection_string_params_share_a_key() {
+        let mut discrete = params(None);
+        discrete.ssl_mode = Some("require".into());
+        let discrete = resolve_connection_params(&discrete).unwrap();
+        let from_string = resolve_connection_params(&ConnectionParams {
+            connection_string: Some(
+                "sqlserver://sa@localhost/master?Encrypt=true&TrustServerCertificate=true".into(),
+            ),
+            password: Some(String::new()),
+            ..Default::default()
+        })
+        .unwrap();
+
+        assert_eq!(
+            build_connection_key(&discrete),
+            build_connection_key(&from_string)
+        );
     }
 }

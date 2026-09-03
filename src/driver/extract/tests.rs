@@ -56,9 +56,9 @@ fn column_type_normalization_matches_the_replaced_tiberius_dispatch() {
         (TdsDataType::Image, ColumnType::Image),
         (TdsDataType::Xml, ColumnType::Xml),
         (TdsDataType::SsVariant, ColumnType::Ssvariant),
-        // The bridge has no UDT variant; the old best-effort string decode
-        // also produced null for the binary CLR payloads we receive.
-        (TdsDataType::Udt, ColumnType::Null),
+        // The bridge has no UDT ColumnType, but it decodes CLR payloads as
+        // bytes, so the plugin exposes them losslessly as BLOB values.
+        (TdsDataType::Udt, ColumnType::BigVarBin),
         (TdsDataType::None, ColumnType::Null),
     ];
 
@@ -86,7 +86,7 @@ fn column_type_normalization_covers_fixed_and_big_wire_names() {
 }
 
 #[test]
-fn exact_decimal_within_rust_decimal_range_is_preserved() {
+fn exact_decimal_is_preserved() {
     let parts = DecimalParts::from_string("123.4500", 10, 4).unwrap();
     let value = numeric_value_to_json(&ColumnValues::Decimal(parts)).unwrap();
 
@@ -94,12 +94,14 @@ fn exact_decimal_within_rust_decimal_range_is_preserved() {
 }
 
 #[test]
-fn decimal_beyond_rust_decimal_range_fails_loudly() {
+fn decimal_38_preserves_every_digit() {
     let parts = DecimalParts::from_string("99999999999999999999999999999999999999", 38, 0).unwrap();
-    let error = numeric_value_to_json(&ColumnValues::Numeric(parts)).unwrap_err();
+    let value = numeric_value_to_json(&ColumnValues::Numeric(parts)).unwrap();
 
-    assert!(error.contains("decimal(38, 0)"));
-    assert!(error.contains("exceeds rust_decimal's exact range"));
+    assert_eq!(
+        value,
+        Value::String("99999999999999999999999999999999999999".into())
+    );
 }
 
 #[test]
@@ -116,6 +118,14 @@ fn money_and_smallmoney_are_exact_decimal_strings() {
 
     assert_eq!(smallmoney, Value::String("-12.3456".into()));
     assert_eq!(money, Value::String("123.4567".into()));
+}
+
+#[test]
+fn binary_values_use_the_host_blob_wire_format() {
+    assert_eq!(
+        binary_to_json(&[0xde, 0xad, 0xbe, 0xef]),
+        Value::String("BLOB:4:application/octet-stream:3q2+7w==".into())
+    );
 }
 
 #[test]

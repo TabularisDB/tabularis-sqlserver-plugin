@@ -103,7 +103,7 @@ pub fn get_data_types() -> Vec<DataTypeInfo> {
         // Character strings
         DataTypeInfo {
             name: "CHAR".to_string(),
-            category: "text".to_string(),
+            category: "string".to_string(),
             requires_length: true,
             requires_precision: false,
             default_length: Some("1".to_string()),
@@ -112,7 +112,7 @@ pub fn get_data_types() -> Vec<DataTypeInfo> {
         },
         DataTypeInfo {
             name: "VARCHAR".to_string(),
-            category: "text".to_string(),
+            category: "string".to_string(),
             requires_length: true,
             requires_precision: false,
             default_length: Some("255".to_string()),
@@ -121,7 +121,7 @@ pub fn get_data_types() -> Vec<DataTypeInfo> {
         },
         DataTypeInfo {
             name: "VARCHAR(MAX)".to_string(),
-            category: "text".to_string(),
+            category: "string".to_string(),
             requires_length: false,
             requires_precision: false,
             default_length: None,
@@ -130,7 +130,7 @@ pub fn get_data_types() -> Vec<DataTypeInfo> {
         },
         DataTypeInfo {
             name: "TEXT".to_string(),
-            category: "text".to_string(),
+            category: "string".to_string(),
             requires_length: false,
             requires_precision: false,
             default_length: None,
@@ -140,7 +140,7 @@ pub fn get_data_types() -> Vec<DataTypeInfo> {
         // Unicode strings
         DataTypeInfo {
             name: "NCHAR".to_string(),
-            category: "text".to_string(),
+            category: "string".to_string(),
             requires_length: true,
             requires_precision: false,
             default_length: Some("1".to_string()),
@@ -149,7 +149,7 @@ pub fn get_data_types() -> Vec<DataTypeInfo> {
         },
         DataTypeInfo {
             name: "NVARCHAR".to_string(),
-            category: "text".to_string(),
+            category: "string".to_string(),
             requires_length: true,
             requires_precision: false,
             default_length: Some("255".to_string()),
@@ -158,7 +158,7 @@ pub fn get_data_types() -> Vec<DataTypeInfo> {
         },
         DataTypeInfo {
             name: "NVARCHAR(MAX)".to_string(),
-            category: "text".to_string(),
+            category: "string".to_string(),
             requires_length: false,
             requires_precision: false,
             default_length: None,
@@ -167,7 +167,7 @@ pub fn get_data_types() -> Vec<DataTypeInfo> {
         },
         DataTypeInfo {
             name: "NTEXT".to_string(),
-            category: "text".to_string(),
+            category: "string".to_string(),
             requires_length: false,
             requires_precision: false,
             default_length: None,
@@ -214,7 +214,7 @@ pub fn get_data_types() -> Vec<DataTypeInfo> {
         // Date / time
         DataTypeInfo {
             name: "DATE".to_string(),
-            category: "datetime".to_string(),
+            category: "date".to_string(),
             requires_length: false,
             requires_precision: false,
             default_length: None,
@@ -223,7 +223,7 @@ pub fn get_data_types() -> Vec<DataTypeInfo> {
         },
         DataTypeInfo {
             name: "TIME".to_string(),
-            category: "datetime".to_string(),
+            category: "date".to_string(),
             requires_length: false,
             requires_precision: false,
             default_length: None,
@@ -232,7 +232,7 @@ pub fn get_data_types() -> Vec<DataTypeInfo> {
         },
         DataTypeInfo {
             name: "DATETIME".to_string(),
-            category: "datetime".to_string(),
+            category: "date".to_string(),
             requires_length: false,
             requires_precision: false,
             default_length: None,
@@ -241,7 +241,7 @@ pub fn get_data_types() -> Vec<DataTypeInfo> {
         },
         DataTypeInfo {
             name: "DATETIME2".to_string(),
-            category: "datetime".to_string(),
+            category: "date".to_string(),
             requires_length: false,
             requires_precision: false,
             default_length: None,
@@ -250,7 +250,7 @@ pub fn get_data_types() -> Vec<DataTypeInfo> {
         },
         DataTypeInfo {
             name: "SMALLDATETIME".to_string(),
-            category: "datetime".to_string(),
+            category: "date".to_string(),
             requires_length: false,
             requires_precision: false,
             default_length: None,
@@ -259,7 +259,7 @@ pub fn get_data_types() -> Vec<DataTypeInfo> {
         },
         DataTypeInfo {
             name: "DATETIMEOFFSET".to_string(),
-            category: "datetime".to_string(),
+            category: "date".to_string(),
             requires_length: false,
             requires_precision: false,
             default_length: None,

@@ -1,0 +1,11 @@
+{
+  "name": "@tabularis/explain",
+  "version": "0.2.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "import": "./index.js"
+    }
+  }
+}

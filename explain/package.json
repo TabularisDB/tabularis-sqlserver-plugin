@@ -1,0 +1,61 @@
+{
+  "name": "@tabularis/explain-sqlserver",
+  "version": "1.0.0-beta.1",
+  "description": "SQL Server SHOWPLAN XML parser for Tabularis Visual EXPLAIN",
+  "license": "Apache-2.0",
+  "homepage": "https://github.com/TabularisDB/tabularis-sqlserver-plugin/tree/main/explain",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/TabularisDB/tabularis-sqlserver-plugin.git",
+    "directory": "explain"
+  },
+  "bugs": {
+    "url": "https://github.com/TabularisDB/tabularis-sqlserver-plugin/issues"
+  },
+  "keywords": [
+    "explain",
+    "showplan",
+    "sqlserver",
+    "query-plan",
+    "tabularis"
+  ],
+  "type": "module",
+  "sideEffects": [
+    "./dist/index.js"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "clean": "rm -rf dist",
+    "typecheck": "tsc --noEmit",
+    "test": "pnpm run build && vitest run",
+    "prepublishOnly": "pnpm run clean && pnpm run typecheck && pnpm run test"
+  },
+  "peerDependencies": {
+    "@tabularis/explain": "^0.2.0"
+  },
+  "devDependencies": {
+    "@tabularis/explain": "file:tests/host",
+    "@types/node": "^22.0.0",
+    "tsup": "^8.3.5",
+    "typescript": "~5.9.3",
+    "vitest": "^3.2.4"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "pnpm@11.23.0"
+}

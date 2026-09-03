@@ -1,0 +1,5 @@
+{
+  "id": 1,
+  "jsonrpc": "2.0",
+  "result": "CREATE PROCEDURE [ss044].[sample_proc] @input INT, @output NVARCHAR(20) OUTPUT AS BEGIN SET NOCOUNT ON; SET @output = CONCAT(N'value-', @input); SELECT @input AS input_value; END"
+}

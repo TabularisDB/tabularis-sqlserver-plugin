@@ -1,0 +1,52 @@
+{
+  "id": 1,
+  "jsonrpc": "2.0",
+  "result": {
+    "database": [
+      "ALTER",
+      "CONTROL",
+      "DELETE",
+      "EXECUTE",
+      "INSERT",
+      "REFERENCES",
+      "SELECT",
+      "TAKE OWNERSHIP",
+      "UPDATE",
+      "VIEW CHANGE TRACKING",
+      "VIEW DEFINITION"
+    ],
+    "global": [
+      "AUTHENTICATE",
+      "BACKUP DATABASE",
+      "BACKUP LOG",
+      "CHECKPOINT",
+      "CONNECT",
+      "CREATE FUNCTION",
+      "CREATE PROCEDURE",
+      "CREATE ROLE",
+      "CREATE SCHEMA",
+      "CREATE SYNONYM",
+      "CREATE TABLE",
+      "CREATE TYPE",
+      "CREATE VIEW",
+      "SHOWPLAN",
+      "SUBSCRIBE QUERY NOTIFICATIONS",
+      "UNMASK",
+      "VIEW DATABASE STATE"
+    ],
+    "table": [
+      "ALTER",
+      "CONTROL",
+      "DELETE",
+      "EXECUTE",
+      "INSERT",
+      "RECEIVE",
+      "REFERENCES",
+      "SELECT",
+      "TAKE OWNERSHIP",
+      "UPDATE",
+      "VIEW CHANGE TRACKING",
+      "VIEW DEFINITION"
+    ]
+  }
+}

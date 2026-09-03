@@ -1,0 +1,7 @@
+<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title description">
+  <title id="title">Microsoft SQL Server</title>
+  <desc id="description">White database cylinder on a SQL Server red rounded square</desc>
+  <rect width="32" height="32" rx="7" fill="#cc2927"/>
+  <ellipse cx="16" cy="9" rx="8" ry="3.5" fill="none" stroke="#fff" stroke-width="1.8"/>
+  <path d="M8 9v12c0 2 3.6 3.5 8 3.5s8-1.5 8-3.5V9M8 15c0 2 3.6 3.5 8 3.5s8-1.5 8-3.5" fill="none" stroke="#fff" stroke-linecap="round" stroke-width="1.8"/>
+</svg>

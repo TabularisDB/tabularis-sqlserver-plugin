@@ -1,0 +1,30 @@
+{
+  "id": 1,
+  "jsonrpc": "2.0",
+  "result": [
+    {
+      "column_name": "label",
+      "is_expression": false,
+      "is_primary": false,
+      "is_unique": true,
+      "name": "ix_child_label",
+      "seq_in_index": 1
+    },
+    {
+      "column_name": "parent_id",
+      "is_expression": false,
+      "is_primary": false,
+      "is_unique": false,
+      "name": "ix_drop",
+      "seq_in_index": 1
+    },
+    {
+      "column_name": "id",
+      "is_expression": false,
+      "is_primary": true,
+      "is_unique": true,
+      "name": "PK__child__3213E83FF87841BF",
+      "seq_in_index": 1
+    }
+  ]
+}

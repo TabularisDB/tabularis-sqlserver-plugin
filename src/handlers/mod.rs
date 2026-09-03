@@ -1,7 +1,9 @@
+pub mod blob;
 pub mod crud;
 pub mod ddl;
 pub mod metadata;
 pub mod query;
 pub mod routines;
 pub mod triggers;
+pub mod users;
 pub mod views;

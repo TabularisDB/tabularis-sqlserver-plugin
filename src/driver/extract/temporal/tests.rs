@@ -64,6 +64,22 @@ fn datetime_with_fraction_trims_trailing_zeros() {
 }
 
 #[test]
+fn legacy_datetime_rounds_three_hundredth_second_ticks() {
+    assert_eq!(
+        format_legacy_datetime(0, 1).as_deref(),
+        Some("1900-01-01 00:00:00.003")
+    );
+    assert_eq!(
+        format_legacy_datetime(0, 2).as_deref(),
+        Some("1900-01-01 00:00:00.007")
+    );
+    assert_eq!(
+        format_legacy_datetime(0, 3).as_deref(),
+        Some("1900-01-01 00:00:00.01")
+    );
+}
+
+#[test]
 fn datetime_epoch_value() {
     assert_eq!(
         format_datetime(&dt(1970, 1, 1, 0, 0, 0, 0)),

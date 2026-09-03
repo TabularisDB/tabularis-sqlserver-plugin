@@ -78,9 +78,10 @@ fn bracket_quote_is_round_trip_safe_through_itself() {
 #[test]
 fn build_insert_sql_plain_emits_positional_placeholders() {
     let sql = build_insert_sql(
-        "[dbo].[Users]",
-        &["id".to_string(), "name".to_string(), "email".to_string()],
         None,
+        "Users",
+        &["id".to_string(), "name".to_string(), "email".to_string()],
+        false,
     );
     assert_eq!(
         sql,
@@ -102,9 +103,10 @@ fn wrap_dml_with_rowcount_keeps_multi_statement_batch_and_single_sentinel() {
 #[test]
 fn build_insert_sql_plain_quotes_column_identifiers() {
     let sql = build_insert_sql(
-        "[sales].[Orders]",
+        Some("sales"),
+        "Orders",
         &["order id".to_string(), "weird]col".to_string()],
-        None,
+        false,
     );
     assert!(sql.contains("([order id], [weird]]col])"));
     assert!(sql.contains("VALUES (@P1, @P2)"));
@@ -112,11 +114,7 @@ fn build_insert_sql_plain_quotes_column_identifiers() {
 
 #[test]
 fn build_insert_sql_with_identity_wraps_in_try_catch() {
-    let sql = build_insert_sql(
-        "[dbo].[Users]",
-        &["id".to_string(), "name".to_string()],
-        Some("[dbo].[Users]"),
-    );
+    let sql = build_insert_sql(None, "Users", &["id".to_string(), "name".to_string()], true);
     assert!(sql.contains("BEGIN TRY"));
     assert!(sql.contains("SET IDENTITY_INSERT [dbo].[Users] ON;"));
     assert!(sql.contains("INSERT INTO [dbo].[Users] ([id], [name]) VALUES (@P1, @P2);"));
@@ -146,12 +144,10 @@ fn build_insert_sql_with_identity_wraps_in_try_catch() {
 }
 
 #[test]
-fn build_insert_sql_with_identity_uses_provided_target() {
-    // Caller may pass a different qualified name as the IDENTITY_INSERT
-    // target (e.g. for round-trip tests with escaped identifiers).
-    let sql = build_insert_sql("[dbo].[T]", &["k".to_string()], Some("[s].[we]]ird]"));
-    assert!(sql.contains("SET IDENTITY_INSERT [s].[we]]ird] ON;"));
-    assert!(sql.contains("SET IDENTITY_INSERT [s].[we]]ird] OFF;"));
+fn build_insert_sql_with_identity_quotes_its_target() {
+    let sql = build_insert_sql(Some("9schéma]"), "weird\"name]", &["k".to_string()], true);
+    assert!(sql.contains("SET IDENTITY_INSERT [9schéma]]].[weird\"name]]] ON;"));
+    assert!(sql.contains("SET IDENTITY_INSERT [9schéma]]].[weird\"name]]] OFF;"));
 }
 
 #[test]
@@ -168,6 +164,43 @@ fn value_to_sql_param_accepts_supported_json_variants() {
     ] {
         assert!(value_to_sql_param(&value).is_ok(), "rejected {value}");
     }
+}
+
+#[test]
+fn raw_row_edit_shape_is_explicit_and_null_is_untyped() {
+    let raw = serde_json::json!({
+        "value": "geometry::STGeomFromText('POINT (1 2)', 0)",
+        "is_raw": true
+    });
+    assert_eq!(
+        raw_sql_expression(&raw).unwrap(),
+        Some("geometry::STGeomFromText('POINT (1 2)', 0)")
+    );
+    assert_eq!(
+        raw_sql_expression(&serde_json::Value::Null).unwrap(),
+        Some("NULL")
+    );
+    assert_eq!(
+        raw_sql_expression(&serde_json::json!({"value": "still JSON"})).unwrap(),
+        None
+    );
+    assert!(raw_sql_expression(&serde_json::json!({"value": 1, "is_raw": true})).is_err());
+}
+
+#[test]
+fn explicit_insert_expressions_do_not_consume_parameter_markers() {
+    let sql = build_insert_sql_with_expressions(
+        Some("dbo"),
+        "spatial",
+        &["id".into(), "shape".into(), "note".into()],
+        &[
+            "@P1".into(),
+            "geometry::STGeomFromText('POINT (1 2)', 0)".into(),
+            "@P2".into(),
+        ],
+        false,
+    );
+    assert!(sql.contains("VALUES (@P1, geometry::STGeomFromText('POINT (1 2)', 0), @P2)"));
 }
 
 // --- composite PK SQL builders (issue #145) ----------------------------
@@ -301,48 +334,83 @@ fn render_column_definition_handles_identity_default_and_pk() {
 }
 
 #[test]
-fn result_set_classification_handles_cte_dml_and_mixed_batches() {
-    assert!(query_returns_result_set(
-        "WITH cte AS (SELECT 1 AS id) SELECT id FROM cte"
-    ));
-    assert!(!query_returns_result_set(
-        "WITH cte AS (SELECT 1 AS id) UPDATE users SET active = 1 FROM users JOIN cte ON users.id = cte.id"
-    ));
-    assert!(query_returns_result_set(
-        "INSERT INTO audit(message) VALUES ('x'); SELECT SCOPE_IDENTITY()"
-    ));
-    assert!(query_returns_result_set(
-        "SELECT 1; UPDATE users SET active = 1"
-    ));
-    assert!(query_returns_result_set(
-        "EXEC sp_executesql N'SELECT 1 AS value'"
-    ));
-    assert!(query_returns_result_set(
-        "UPDATE users SET active = 1 OUTPUT INSERTED.id WHERE id = 7"
-    ));
-    assert!(query_returns_result_set(
-        "WITH target AS (SELECT id FROM users) DELETE FROM target OUTPUT DELETED.id"
-    ));
-    assert!(!query_returns_result_set(
-        "UPDATE users SET active = 1 WHERE id = 7"
-    ));
-    assert!(query_can_be_paginated(
-        "WITH cte AS (SELECT 1 AS id) SELECT id FROM cte"
-    ));
-    assert!(!query_can_be_paginated("SELECT 1; SELECT 2"));
-    assert!(!query_can_be_paginated("EXEC sp_executesql N'SELECT 1'"));
-    assert!(!query_can_be_paginated(
-        "UPDATE users SET active = 1 OUTPUT INSERTED.id"
-    ));
-    assert!(!query_can_be_paginated(
-        "WITH cte AS (SELECT 1 AS id) DELETE FROM users WHERE id IN (SELECT id FROM cte)"
-    ));
+fn classifier_handles_cte_followed_by_select() {
+    let query = "WITH cte AS (SELECT 1 AS id) SELECT id FROM cte";
+    assert!(query_returns_result_set(query));
+    assert!(query_can_be_paginated(query));
+    assert!(!query_reports_affected_rows(query));
+}
+
+#[test]
+fn classifier_handles_cte_followed_by_insert() {
+    let query = "WITH source AS (SELECT 1 AS id) INSERT INTO audit(id) SELECT id FROM source";
+    assert!(!query_returns_result_set(query));
+    assert!(!query_can_be_paginated(query));
+    assert!(query_reports_affected_rows(query));
+}
+
+#[test]
+fn classifier_treats_select_into_as_affected_rows_not_a_result_set() {
+    for query in [
+        "SELECT id INTO #selected FROM users",
+        "WITH source AS (SELECT id FROM users) SELECT id INTO #selected FROM source",
+    ] {
+        assert!(
+            !query_returns_result_set(query),
+            "got result set for {query}"
+        );
+        assert!(!query_can_be_paginated(query), "paginated {query}");
+        assert!(
+            query_reports_affected_rows(query),
+            "lost row count for {query}"
+        );
+    }
+}
+
+#[test]
+fn classifier_handles_merge_and_exec() {
+    let merge = "MERGE users AS target USING source ON target.id = source.id WHEN MATCHED THEN UPDATE SET target.active = 1";
+    assert!(!query_returns_result_set(merge));
+    assert!(!query_can_be_paginated(merge));
+    assert!(query_reports_affected_rows(merge));
+    assert!(query_returns_result_set(&format!(
+        "{merge} OUTPUT INSERTED.id"
+    )));
+
+    let exec = "EXEC sp_executesql N'SELECT 1 AS value'";
+    assert!(query_returns_result_set(exec));
+    assert!(!query_can_be_paginated(exec));
+    assert!(!query_reports_affected_rows(exec));
+}
+
+#[test]
+fn classifier_handles_select_from_temp_table() {
+    let query = "SELECT id FROM #selected ORDER BY id";
+    assert!(query_returns_result_set(query));
+    assert!(query_can_be_paginated(query));
+    assert!(!query_reports_affected_rows(query));
+}
+
+#[test]
+fn classifier_handles_mixed_batches() {
+    let ending_in_select = "UPDATE users SET active = 1; SELECT id FROM users";
+    assert!(query_returns_result_set(ending_in_select));
+    assert!(!query_can_be_paginated(ending_in_select));
+    assert!(!query_reports_affected_rows(ending_in_select));
+
+    let ending_in_dml = "SELECT id FROM users; DELETE FROM users WHERE active = 0";
+    assert!(query_returns_result_set(ending_in_dml));
+    assert!(!query_can_be_paginated(ending_in_dml));
+    assert!(query_reports_affected_rows(ending_in_dml));
 }
 
 #[test]
 fn result_set_classification_ignores_literals_comments_and_identifiers() {
     assert!(!query_returns_result_set(
         "UPDATE [SELECT] SET [value] = '; SELECT 1' -- ; SELECT 2"
+    ));
+    assert!(!query_returns_result_set(
+        "UPDATE users SET note = 'order by id' /* order by id; SELECT 1 */"
     ));
 }
 
@@ -376,31 +444,45 @@ fn paginated_query_adds_order_when_missing() {
 }
 
 #[test]
-fn paginated_query_preserves_existing_order() {
-    assert_eq!(
-        build_paginated_query("SELECT * FROM [users] ORDER BY [id]", 10, 1),
-        "SELECT * FROM [users] ORDER BY [id] OFFSET 0 ROWS FETCH NEXT 11 ROWS ONLY"
-    );
-}
-
-#[test]
-fn paginated_query_ignores_nested_order() {
-    assert_eq!(
-        build_paginated_query(
-            "SELECT * FROM (SELECT TOP 5 * FROM [users] ORDER BY [id]) AS [recent]",
-            10,
-            1,
-        ),
-        "SELECT * FROM (SELECT TOP 5 * FROM [users] ORDER BY [id]) AS [recent] ORDER BY (SELECT NULL) OFFSET 0 ROWS FETCH NEXT 11 ROWS ONLY"
-    );
-}
-
-#[test]
-fn paginated_query_ignores_order_by_in_literals_and_comments() {
+fn paginated_query_preserves_top_level_order_with_sql_whitespace() {
     for query in [
+        "SELECT * FROM [users] ORDER BY [id]",
+        "SELECT * FROM [users] ORDER\nBY [id]",
+        "SELECT * FROM [users] ORDER /* stable key */ BY [id]",
+    ] {
+        let paginated = build_paginated_query(query, 10, 1);
+        assert!(
+            !paginated.contains("ORDER BY (SELECT NULL)"),
+            "got {paginated}"
+        );
+        assert!(
+            paginated.ends_with("OFFSET 0 ROWS FETCH NEXT 11 ROWS ONLY"),
+            "got {paginated}"
+        );
+    }
+}
+
+#[test]
+fn paginated_query_ignores_nested_order_in_subquery_and_window() {
+    for query in [
+        "SELECT * FROM (SELECT TOP 5 * FROM [users] ORDER BY [id]) AS [recent]",
+        "SELECT ROW_NUMBER() OVER (ORDER BY [id]) AS [position] FROM [users]",
+    ] {
+        let paginated = build_paginated_query(query, 10, 1);
+        assert!(
+            paginated.contains("ORDER BY (SELECT NULL) OFFSET"),
+            "got {paginated}"
+        );
+    }
+}
+
+#[test]
+fn paginated_query_ignores_order_words_in_literals_and_comments() {
+    for query in [
+        "SELECT 'order' AS [label]",
         "SELECT 'ORDER BY' AS [label]",
-        "SELECT 1 -- ORDER BY [id]",
-        "SELECT 1 /* ORDER BY [id] */",
+        "SELECT 1 -- order by [id]",
+        "SELECT 1 /* the word order and ORDER BY [id] */",
         "SELECT N'città ORDER BY nome'",
     ] {
         let paginated = build_paginated_query(query, 10, 1);

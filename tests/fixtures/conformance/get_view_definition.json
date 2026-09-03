@@ -1,0 +1,5 @@
+{
+  "id": 1,
+  "jsonrpc": "2.0",
+  "result": "CREATE VIEW [ss044].[base_view] AS SELECT id, label FROM [ss044].[child]"
+}

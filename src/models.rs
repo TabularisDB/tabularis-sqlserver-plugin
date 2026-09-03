@@ -53,6 +53,9 @@ pub struct ConnectionParams {
     pub ssl_ca: Option<String>,
     pub ssl_cert: Option<String>,
     pub ssl_key: Option<String>,
+    /// URL or ADO.NET/ODBC keyword connection string. It is parsed and
+    /// reconciled with the discrete fields before a pool is selected.
+    pub connection_string: Option<String>,
     /// SQL run on every new physical connection in the pool. Statements are
     /// separated by `;`. Runs per pooled connection so the setting applies to
     /// every query regardless of which connection the pool hands out.
@@ -73,6 +76,8 @@ pub struct TableColumn {
     pub is_pk: bool,
     pub is_nullable: bool,
     pub is_auto_increment: bool,
+    #[serde(default)]
+    pub is_generated: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub default_value: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -96,6 +101,8 @@ pub struct Index {
     pub is_unique: bool,
     pub is_primary: bool,
     pub seq_in_index: i32,
+    #[serde(default)]
+    pub is_expression: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -205,6 +212,33 @@ pub struct TriggerInfo {
     pub definition: Option<String>,
 }
 
+/// One database principal backed by a SQL Server login. The host's `host`
+/// field carries the mapped login name for SQL Server.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct DbUserInfo {
+    pub user: String,
+    pub host: String,
+    pub locked: bool,
+}
+
+/// SQL Server privilege names accepted by the three host scope lists.
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct DbPrivilegeCatalog {
+    pub database: Vec<String>,
+    pub global: Vec<String>,
+    pub table: Vec<String>,
+}
+
+/// Direct grants at one database, schema, or object scope. SQL Server maps
+/// those levels to `(None, None)`, `(Some(schema), None)`, and
+/// `(Some(schema), Some(object))` on the host wire shape.
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+pub struct DbUserGrantSet {
+    pub database: Option<String>,
+    pub table: Option<String>,
+    pub privileges: Vec<String>,
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ColumnDefinition {
     pub name: String,
@@ -215,7 +249,7 @@ pub struct ColumnDefinition {
     pub default_value: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct DataTypeInfo {
     pub name: String,
     pub category: String,

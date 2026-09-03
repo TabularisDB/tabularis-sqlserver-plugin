@@ -1,0 +1,71 @@
+# `@tabularis/explain-sqlserver`
+
+SQL Server `SHOWPLAN_XML` and `STATISTICS XML` parser for Tabularis Visual
+EXPLAIN. This package is maintained and versioned with the
+[Tabularis SQL Server plugin](https://github.com/TabularisDB/tabularis-sqlserver-plugin).
+
+## Install
+
+```bash
+pnpm add @tabularis/explain @tabularis/explain-sqlserver
+```
+
+`@tabularis/explain` 0.2.0 or newer is required because that release introduced
+the parser registry.
+
+## Register on import
+
+Import the package for its registration side effect before parsing SQL Server
+raw output through `@tabularis/explain`:
+
+```ts
+import "@tabularis/explain-sqlserver";
+import { parseRawExplain } from "@tabularis/explain";
+
+const plan = parseRawExplain({
+  engine: "sqlserver",
+  format: "sqlserver-showplan-xml",
+  payload: showplanXml,
+  original_query: "SELECT * FROM dbo.orders",
+});
+```
+
+The package declares `dist/index.js` as side-effectful so bundlers retain the
+registration import.
+
+## Parse directly
+
+The parser is also exported for callers that already have a SHOWPLAN document:
+
+```ts
+import { parseShowplanXml } from "@tabularis/explain-sqlserver";
+
+const plan = parseShowplanXml(showplanXml);
+```
+
+Direct parsing leaves `original_query` empty. The registry's raw-output path
+adds the original query supplied by the caller.
+
+## Plugin bundle
+
+The build also produces `dist/index.iife.js`. Tabularis loads that file from
+the installed SQL Server plugin, evaluates it with the
+`__TABULARIS_EXPLAIN__` host API, and reads the parser descriptor from
+`__tabularis_explain_parser__`. The IIFE does not register itself; the desktop
+loader validates it against the plugin manifest and performs registration.
+
+## XML support
+
+The parser has no runtime dependencies and uses no Node built-ins. Its small
+XML reader validates element nesting, quoted attributes, entities, comments,
+CDATA and processing instructions while treating XML namespace prefixes as
+irrelevant to SHOWPLAN element names. This keeps the same source usable in a
+browser tab, the desktop IIFE, and server-side JavaScript.
+
+The golden fixtures under `tests/fixtures/` were captured from SQL Server 2022.
+Their expected plans preserve the output of the former Rust parser at the
+TypeScript handoff boundary; the Rust parser was removed after parity was
+verified. They cover a scan, an index seek with key lookup, a parallel hash
+join, `STATISTICS XML`, a missing-index recommendation, and a multi-statement
+batch. Update an expected plan only with a separately reviewed parser-semantic
+change.

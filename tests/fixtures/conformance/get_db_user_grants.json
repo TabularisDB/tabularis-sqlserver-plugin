@@ -1,0 +1,8 @@
+{
+  "id": 1,
+  "jsonrpc": "2.0",
+  "result": [
+    "GRANT CONNECT ON DATABASE::[tabularis_test] TO [ss044_user]",
+    "GRANT SELECT ON OBJECT::[ss044].[parent] TO [ss044_user]"
+  ]
+}

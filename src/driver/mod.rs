@@ -4,7 +4,9 @@
 //! The driver supports schema introspection, table/view DDL, foreign keys,
 //! triggers, and stored-routine management.
 
+pub mod blob;
 pub mod ddl;
+pub mod error;
 pub mod explain;
 pub mod extract;
 pub mod helpers;
@@ -12,9 +14,9 @@ pub mod introspection;
 pub mod ops;
 pub mod pool;
 pub mod routines;
-pub mod showplan;
 pub mod triggers;
 pub mod types;
+pub mod users;
 pub mod version;
 
 use mssql_tds::connection::tds_client::{ResultSet, ResultSetClient};
@@ -22,14 +24,43 @@ use mssql_tiberius_bridge::row::RowSchema;
 use mssql_tiberius_bridge::Row;
 
 use crate::models::{ConnectionParams, Pagination, QueryResult};
-use crate::pool_manager::get_sqlserver_pool;
+use crate::pool_manager::{self, get_sqlserver_pool};
+
+/// Maximum rows retained across all result sets from one statement.
+///
+/// JSON-RPC responses are single JSON lines, so they cannot be streamed to the
+/// host incrementally. This ceiling bounds response memory even when callers
+/// omit `limit` or request an impractically large page. SQL Server may produce
+/// one additional row so the collector can set `truncated` accurately.
+pub const MAX_RESULT_ROWS: usize = 10_000;
+
+#[derive(Clone, Copy)]
+enum OverflowPolicy {
+    /// Cancel the remaining TDS result stream as soon as the ceiling is known
+    /// to have been exceeded.
+    Stop,
+    /// Drain without retaining ordinary rows. Result-bearing DML needs its
+    /// trailing affected-row sentinel, even when OUTPUT exceeds the ceiling.
+    DrainForAffectedRows,
+}
 
 /// Acquire a pooled client from the pool manager.
 pub async fn acquire(
     params: &ConnectionParams,
 ) -> Result<deadpool::managed::Object<pool::BridgeManager>, String> {
-    let pool = get_sqlserver_pool(params).await?;
-    pool.get().await.map_err(|e| e.to_string())
+    let pool = get_sqlserver_pool(params)
+        .await
+        .map_err(|message| error::redact_connection_secrets(message, params))?;
+    match pool.get().await {
+        Ok(connection) => Ok(connection),
+        Err(pool_error) => {
+            // A pool whose manager cannot connect must not pin stale host,
+            // credential, or TLS configuration under a stable connection id.
+            pool_manager::remove_sqlserver_pool(params).await;
+            let message = error::format_pool_error(&pool_error, params.ssl_mode.as_deref());
+            Err(error::redact_connection_secrets(message, params))
+        }
+    }
 }
 
 fn empty_query_result(columns: Vec<String>) -> QueryResult {
@@ -43,7 +74,7 @@ fn empty_query_result(columns: Vec<String>) -> QueryResult {
     }
 }
 
-/// Run `query` as a simple batch and collect every result set.
+/// Run `query` as a simple batch and collect its bounded result sets.
 ///
 /// Goes through the bridge's `inner_mut()` escape hatch instead of
 /// `simple_query().into_results()`: the bridge derives columns from rows, so
@@ -55,23 +86,30 @@ fn empty_query_result(columns: Vec<String>) -> QueryResult {
 async fn run_query_collecting(
     conn: &mut pool::BridgeConnection,
     query: &str,
+    overflow_policy: OverflowPolicy,
 ) -> Result<Vec<QueryResult>, String> {
+    let query_timeout_seconds = conn.query_timeout_seconds();
+    let ssl_mode = conn.ssl_mode().to_owned();
     let client = conn.inner_mut();
     // Drain any leftover state from a prior query / dropped stream so we
     // don't hit "open batch" errors when re-using the client.
     client
         .close_query()
         .await
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| error::format_tds_error(&error, Some(&ssl_mode)))?;
     client
-        .execute(query.to_string(), None, None)
+        .execute(query.to_string(), query_timeout_seconds, None)
         .await
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| error::format_tds_error(&error, Some(&ssl_mode)))?;
 
     let mut results = Vec::new();
-    while let Some(result_set) = client.get_current_resultset() {
+    let mut retained_rows = 0usize;
+    let mut stopped_early = false;
+    'result_sets: while let Some(result_set) = client.get_current_resultset() {
         let metadata = result_set.get_metadata().clone();
         let schema = RowSchema::from_metadata(&metadata);
+        let is_affected_rows_sentinel =
+            metadata.len() == 1 && metadata[0].column_name == helpers::AFFECTED_ROWS_COLUMN;
         let mut current = empty_query_result(
             metadata
                 .iter()
@@ -81,8 +119,18 @@ async fn run_query_collecting(
         while let Some(values) = result_set
             .next_row()
             .await
-            .map_err(|error| error.to_string())?
+            .map_err(|error| error::format_tds_error(&error, Some(&ssl_mode)))?
         {
+            if retained_rows >= MAX_RESULT_ROWS && !is_affected_rows_sentinel {
+                current.truncated = true;
+                if matches!(overflow_policy, OverflowPolicy::Stop) {
+                    results.push(current);
+                    stopped_early = true;
+                    break 'result_sets;
+                }
+                continue;
+            }
+
             let row = Row::from_schema(schema.clone(), values);
             current.rows.push(
                 metadata
@@ -97,14 +145,31 @@ async fn run_query_collecting(
                     })
                     .collect::<Result<Vec<_>, _>>()?,
             );
+            if !is_affected_rows_sentinel {
+                retained_rows += 1;
+            }
         }
         results.push(current);
         if !client
             .move_to_next()
             .await
-            .map_err(|error| error.to_string())?
+            .map_err(|error| error::format_tds_error(&error, Some(&ssl_mode)))?
         {
             break;
+        }
+    }
+    if stopped_early {
+        client
+            .close_query()
+            .await
+            .map_err(|error| error::format_tds_error(&error, Some(&ssl_mode)))?;
+    }
+    if results.iter().any(|result| result.truncated) {
+        // `truncated` on the primary result is the statement-level signal the
+        // host already consumes. Keep it true even if the budget was crossed
+        // in an additional result set.
+        if let Some(first) = results.first_mut() {
+            first.truncated = true;
         }
     }
     Ok(results)
@@ -160,7 +225,9 @@ async fn execute_result_bearing_dml(
     query: &str,
 ) -> Result<QueryResult, String> {
     let wrapped = helpers::wrap_dml_with_rowcount(query);
-    finish_result_bearing_dml(run_query_collecting(conn, &wrapped).await?)
+    finish_result_bearing_dml(
+        run_query_collecting(conn, &wrapped, OverflowPolicy::DrainForAffectedRows).await?,
+    )
 }
 
 pub async fn execute_on_connection(
@@ -201,7 +268,7 @@ pub async fn execute_on_connection(
         Some(page_size) => helpers::build_paginated_query(query, page_size, page),
         None => query.to_string(),
     };
-    let mut results = run_query_collecting(conn, &final_query).await?;
+    let mut results = run_query_collecting(conn, &final_query, OverflowPolicy::Stop).await?;
     let mut first = if results.is_empty() {
         empty_query_result(Vec::new())
     } else {
@@ -209,8 +276,8 @@ pub async fn execute_on_connection(
     };
 
     if let Some(ref mut pagination) = pagination {
-        pagination.has_more = first.rows.len() > pagination.page_size as usize;
-        if pagination.has_more {
+        pagination.has_more = first.truncated || first.rows.len() > pagination.page_size as usize;
+        if first.rows.len() > pagination.page_size as usize {
             first.rows.truncate(pagination.page_size as usize);
             first.truncated = true;
         }
@@ -221,6 +288,9 @@ pub async fn execute_on_connection(
     }
     Ok(first)
 }
+
+#[cfg(test)]
+mod sql_audit_tests;
 
 #[cfg(test)]
 mod tests {

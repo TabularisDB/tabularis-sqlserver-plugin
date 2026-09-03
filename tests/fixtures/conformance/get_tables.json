@@ -1,0 +1,21 @@
+{
+  "id": 1,
+  "jsonrpc": "2.0",
+  "result": [
+    {
+      "name": "blob_rows"
+    },
+    {
+      "name": "child"
+    },
+    {
+      "name": "crud_rows"
+    },
+    {
+      "name": "drop_fk_child"
+    },
+    {
+      "name": "parent"
+    }
+  ]
+}
