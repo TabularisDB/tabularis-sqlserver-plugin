@@ -16,7 +16,7 @@ infer = "0.22"
 # preview releases may change bridge semantics without a stable-version signal.
 # To upgrade, review both changelogs and dependency diffs, update both pins,
 # then run the full unit, live-database, clippy, audit, and release-build gates.
-mssql-tiberius-bridge = "=0.1.0-preview.3"
+mssql-tiberius-bridge = "=0.1.0-preview.5"
 # Direct dependency on the underlying protocol crate (lib name `mssql_tds`):
 # the result-set traits used through `Client::inner_mut()` are not re-exported
 # by the bridge. It is pinned in lockstep with the bridge; default integrated
