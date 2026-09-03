@@ -196,7 +196,7 @@ is selected, not LGPL.
 
 | Declared licence | New or upgraded packages in the lock graph |
 | --- | --- |
-| `MIT OR Apache-2.0` | `asn1-rs 0.7.2`, `asn1-rs-derive 0.6.0`, `chacha20 0.10.2`, `core-foundation 0.10.1`, `cpufeatures 0.3.0`, `der-parser 10.0.0`, `deranged 0.5.8`, `displaydoc 0.2.7`, `getrandom 0.4.3`, `hashbrown 0.15.5`, `native-tls 0.2.18`, `num-bigint 0.4.8`, `num-conv 0.2.2`, `num-integer 0.1.46`, `oid-registry 0.8.1`, `openssl-probe 0.2.1`, `pkg-config 0.3.33`, `powerfmt 0.2.0`, `rand 0.10.2`, `rand_core 0.10.1`, `security-framework 3.7.0`, `socket2 0.5.10`, `tempfile 3.27.0`, `thiserror 2.0.19`, `thiserror-impl 2.0.19`, `time 0.3.54`, `time-core 0.1.9`, `time-macros 0.2.32`, `windows 0.58.0`, `windows-core 0.58.0`, `windows-implement 0.58.0`, `windows-interface 0.58.0`, `windows-result 0.2.0`, `windows-strings 0.1.0`, `windows-sys 0.60.2`, `windows-targets 0.53.5`, `windows_aarch64_gnullvm 0.53.1`, `windows_aarch64_msvc 0.53.1`, `windows_i686_gnu 0.53.1`, `windows_i686_gnullvm 0.53.1`, `windows_i686_msvc 0.53.1`, `windows_x86_64_gnu 0.53.1`, `windows_x86_64_gnullvm 0.53.1`, `windows_x86_64_msvc 0.53.1`, `x509-parser 0.18.1` |
+| `MIT OR Apache-2.0` | `asn1-rs 0.7.2`, `asn1-rs-derive 0.6.0`, `chacha20 0.10.2`, `core-foundation 0.10.1`, `cpufeatures 0.3.0`, `der-parser 10.0.0`, `deranged 0.5.8`, `displaydoc 0.2.7`, `getrandom 0.4.3`, `hashbrown 0.15.5`, `native-tls 0.2.18`, `num-bigint 0.4.8`, `num-conv 0.2.2`, `num-integer 0.1.46`, `oid-registry 0.8.1`, `openssl-probe 0.2.1`, `openssl-src 300.6.1+3.6.3`, `pkg-config 0.3.33`, `powerfmt 0.2.0`, `rand 0.10.2`, `rand_core 0.10.1`, `security-framework 3.7.0`, `socket2 0.5.10`, `tempfile 3.27.0`, `thiserror 2.0.19`, `thiserror-impl 2.0.19`, `time 0.3.54`, `time-core 0.1.9`, `time-macros 0.2.32`, `windows 0.58.0`, `windows-core 0.58.0`, `windows-implement 0.58.0`, `windows-interface 0.58.0`, `windows-result 0.2.0`, `windows-strings 0.1.0`, `windows-sys 0.60.2`, `windows-targets 0.53.5`, `windows_aarch64_gnullvm 0.53.1`, `windows_aarch64_msvc 0.53.1`, `windows_i686_gnu 0.53.1`, `windows_i686_gnullvm 0.53.1`, `windows_i686_msvc 0.53.1`, `windows_x86_64_gnu 0.53.1`, `windows_x86_64_gnullvm 0.53.1`, `windows_x86_64_msvc 0.53.1`, `x509-parser 0.18.1` |
 | `MIT/Apache-2.0` | `asn1-rs-impl 0.2.0`, `bigdecimal 0.4.10`, `dns-lookup 2.1.1`, `foreign-types 0.3.2`, `foreign-types-shared 0.1.1`, `minimal-lexical 0.2.1`, `openssl-macros 0.1.1`, `rusticata-macros 4.1.0`, `vcpkg 0.2.15`, `winapi 0.3.9`, `winapi-i686-pc-windows-gnu 0.4.0`, `winapi-x86_64-pc-windows-gnu 0.4.0` |
 | `MIT` | `async-stream 0.3.6`, `async-stream-impl 0.3.6`, `data-encoding 2.11.0`, `hostname 0.4.2`, `libm 0.2.16`, `mssql-tds-preview 0.1.0-preview.1`, `mssql-tiberius-bridge 0.1.0-preview.3`, `nom 7.1.3`, `openssl-sys 0.9.117`, `pretty-hex 0.4.2`, `synstructure 0.13.2`, `tokio-native-tls 0.3.1` |
 | `Apache-2.0 OR MIT` | `fastrand 2.5.0` |
@@ -205,6 +205,14 @@ is selected, not LGPL.
 | `MIT OR Apache-2.0 OR LGPL-2.1-or-later` | `r-efi 6.0.0` |
 
 <!-- markdownlint-enable MD013 -->
+
+On Linux targets the plugin enables the `vendored` feature of `openssl`, which
+compiles OpenSSL 3.6 from the source bundled in `openssl-src` and links it
+statically. The crate is `MIT OR Apache-2.0`; the bundled OpenSSL itself is
+Apache-2.0 and its notice must ship with the Linux archives. This keeps the
+linux-arm64 cross build independent of an aarch64 `libssl-dev` in the container
+and the linux-x64 binary independent of the runner's OpenSSL major version.
+macOS and Windows keep the platform TLS stack selected by `native-tls`.
 
 This inventory is based on package manifests as resolved by Cargo, including
 platform-specific and lockfile-only entries. Release packaging must retain the
