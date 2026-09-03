@@ -31,6 +31,10 @@ published. Publication is tracked in
 - Aligned paging with host lookahead semantics, made totals explicitly
   on-demand, and capped each statement at 10,000 retained rows across result
   sets.
+- Linux release binaries link OpenSSL statically through the `vendored`
+  feature, so the linux-arm64 cross build no longer needs an aarch64
+  `libssl-dev` and the linux-x64 binary no longer depends on the runner's
+  OpenSSL major version.
 
 ### Added
 

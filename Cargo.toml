@@ -28,6 +28,13 @@ serde_json = "1"
 tokio = { version = "1", features = ["full"] }
 uuid = "1"
 
+[target.'cfg(target_os = "linux")'.dependencies]
+# Linux release archives link OpenSSL statically. The cross container used for
+# the linux-arm64 build ships no aarch64 libssl-dev, and a dynamically linked
+# libssl would tie the binary to the runner's OpenSSL major version. Other
+# targets keep the platform TLS stack selected by native-tls.
+openssl = { version = "0.10", features = ["vendored"] }
+
 [profile.release]
 lto = true
 codegen-units = 1
