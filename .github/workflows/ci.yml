@@ -141,7 +141,10 @@ jobs:
 
   version-suggestion:
     name: Version suggestion
-    if: github.event_name == 'pull_request'
+    # Dependabot cannot carry the prerelease:* label this job needs and its
+    # dependency bumps never drive a plugin version on their own, so the
+    # suggestion is skipped for it instead of failing every Dependabot PR.
+    if: github.event_name == 'pull_request' && github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write
