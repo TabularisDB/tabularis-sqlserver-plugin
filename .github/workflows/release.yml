@@ -89,7 +89,7 @@ jobs:
       # from the Corepack copy bundled with Node.
       - name: Setup pnpm
         if: steps.explain.outputs.present == 'true'
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         with:
           package_json_file: explain/package.json
 

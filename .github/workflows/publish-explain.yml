@@ -19,7 +19,7 @@ jobs:
       # See ci.yml: pnpm comes from the pinned "packageManager" field, not
       # from the Corepack copy bundled with Node.
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         with:
           package_json_file: explain/package.json
 
