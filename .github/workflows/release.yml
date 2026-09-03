@@ -204,7 +204,7 @@ jobs:
           fi
 
       - name: Publish release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           # .tabularium ships as a standalone asset: the registry resolves the
           # manifest from release assets, not the git ref.
