@@ -49,7 +49,7 @@ jobs:
       # with Node 22.13 carries stale npm registry signing keys and fails
       # with "Cannot find matching keyid" when it resolves pnpm.
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         with:
           package_json_file: explain/package.json
 
