@@ -170,7 +170,7 @@ jobs:
           Compress-Archive -Path "$stage\*" -DestinationPath "sqlserver-plugin-${{ matrix.platform-label }}.zip"
 
       - name: Stash artifact
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: sqlserver-plugin-${{ matrix.platform-label }}
           path: sqlserver-plugin-${{ matrix.platform-label }}.zip
