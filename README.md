@@ -80,8 +80,9 @@ This plugin enables Tabularis to connect to SQL Server instances, providing sche
 | `host` | `localhost` | Yes unless using `connection_string` | SQL Server hostname or IP address |
 | `port` | `1433` | No | TDS port |
 | `database` | — | Yes unless using `connection_string` | Database the pool connects to |
-| `username` | `sa` | Yes unless using `connection_string` | SQL-authenticated login |
+| `username` | `sa` | Yes unless `integrated_auth` or using `connection_string` | SQL-authenticated login |
 | `password` | — | If required by the server | Login password; redacted from connection errors |
+| `integrated_auth` | `false` | No | Windows/Kerberos integrated authentication (SSPI on Windows, GSSAPI elsewhere); rejects `username`/`password` |
 | `ssl_mode` | `prefer` | No | `disable`, `prefer`, `require`, or `verify-full` |
 | `ssl_ca` | — | No | Rejected; strict TLS uses the system trust store |
 | `ssl_cert` / `ssl_key` | — | No | Rejected; client-certificate authentication is not supported |
@@ -103,6 +104,12 @@ braces preserve semicolons inside values:
 ```text
 Server=tcp:localhost,1433;Database=master;User Id=sa;Password={p;assword};Encrypt=true;TrustServerCertificate=true;
 ```
+
+`integrated_auth` uses SSPI on Windows (no extra setup) and GSSAPI on
+Linux/macOS, loaded at runtime via `dlopen`. The binary builds and starts
+without it, but connecting fails at runtime if `libgssapi_krb5` (package
+`libgssapi-krb5-2` on Debian/Ubuntu, `krb5-libs` on RHEL/Alpine) is missing,
+or without a valid Kerberos ticket (`kinit`) and `/etc/krb5.conf`.
 
 A connection string may be combined with discrete fields. Values explicitly
 present in the string are authoritative, while discrete fields fill only
@@ -339,7 +346,7 @@ remaining pools.
 
 ## Known Limitations
 
-- SQL authentication only; Azure AD and Windows Integrated Authentication are follow-up work.
+- SQL authentication and Windows/Kerberos integrated authentication (`integrated_auth`) are supported; Azure AD authentication is follow-up work.
 - Primary-key membership changes are disabled: the single-column alteration API cannot safely preserve composite PKs and referencing foreign keys.
 - Custom CA files are rejected explicitly; strict verification uses the system trust store.
 - SQL Server has indexed views, not materialized views. Indexed views are maintained synchronously and have no refresh operation, so `get_materialized_views`, `get_materialized_view_columns`, `get_materialized_view_definition`, and `refresh_materialized_view` deliberately return `-32601` rather than pretending the features are equivalent.
