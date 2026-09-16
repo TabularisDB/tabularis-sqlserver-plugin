@@ -18,9 +18,16 @@ use std::collections::HashMap;
 // --- SQL query constants --------------------------------------------------
 
 pub const Q_GET_TABLES: &str = "\
-SELECT t.name \
+SELECT \
+    t.name, \
+    TRY_CONVERT(nvarchar(max), ep.value) AS comment \
 FROM sys.tables t \
 JOIN sys.schemas s ON t.schema_id = s.schema_id \
+LEFT JOIN sys.extended_properties ep \
+    ON ep.class = 1 \
+    AND ep.major_id = t.object_id \
+    AND ep.minor_id = 0 \
+    AND ep.name = N'MS_Description' \
 WHERE s.name = @P1 \
 ORDER BY t.name";
 
@@ -49,12 +56,18 @@ SELECT \
           AND ic.column_id = c.column_id \
           AND i.is_primary_key = 1 \
     ), 0) AS BIT) AS is_pk, \
-    dc.definition AS default_value \
+    dc.definition AS default_value, \
+    TRY_CONVERT(nvarchar(max), ep.value) AS comment \
 FROM sys.columns c \
 JOIN sys.types ty ON c.user_type_id = ty.user_type_id \
 LEFT JOIN sys.default_constraints dc \
     ON dc.parent_object_id = c.object_id \
     AND dc.parent_column_id = c.column_id \
+LEFT JOIN sys.extended_properties ep \
+    ON ep.class = 1 \
+    AND ep.major_id = c.object_id \
+    AND ep.minor_id = c.column_id \
+    AND ep.name = N'MS_Description' \
 WHERE c.object_id = OBJECT_ID(@P1) \
 ORDER BY c.column_id";
 
@@ -204,7 +217,8 @@ SELECT \
           AND ic.column_id = c.column_id \
           AND i.is_primary_key = 1 \
     ), 0) AS BIT) AS is_pk, \
-    dc.definition AS default_value \
+    dc.definition AS default_value, \
+    TRY_CONVERT(nvarchar(max), ep.value) AS comment \
 FROM sys.columns c \
 JOIN sys.tables t ON c.object_id = t.object_id \
 JOIN sys.schemas s ON t.schema_id = s.schema_id \
@@ -212,6 +226,11 @@ JOIN sys.types ty ON c.user_type_id = ty.user_type_id \
 LEFT JOIN sys.default_constraints dc \
     ON dc.parent_object_id = c.object_id \
     AND dc.parent_column_id = c.column_id \
+LEFT JOIN sys.extended_properties ep \
+    ON ep.class = 1 \
+    AND ep.major_id = c.object_id \
+    AND ep.minor_id = c.column_id \
+    AND ep.name = N'MS_Description' \
 WHERE s.name = @P1 \
 ORDER BY t.name, c.column_id";
 
@@ -369,6 +388,7 @@ pub fn build_table_column(
     max_length_bytes: i32,
     is_pk: bool,
     default_value: Option<String>,
+    comment: Option<String>,
 ) -> TableColumn {
     let character_maximum_length = if is_string_type(&data_type) {
         character_length_from_sys_columns(&data_type, max_length_bytes)
@@ -384,6 +404,7 @@ pub fn build_table_column(
         is_generated,
         default_value,
         character_maximum_length,
+        comment,
     }
 }
 
@@ -474,8 +495,9 @@ pub async fn get_tables(
     Ok(rows
         .into_iter()
         .filter_map(|r| {
-            r.get::<&str, _>(0).map(|n| TableInfo {
+            r.get::<&str, _>("name").map(|n| TableInfo {
                 name: n.to_string(),
+                comment: row_str_opt(&r, "comment"),
             })
         })
         .collect())
@@ -505,6 +527,7 @@ pub async fn get_columns(
                 row_i32(&r, "max_length"),
                 row_bool(&r, "is_pk"),
                 row_str_opt(&r, "default_value"),
+                row_str_opt(&r, "comment"),
             )
         })
         .collect())
@@ -597,6 +620,7 @@ pub async fn get_all_columns_batch(
             row_i32(&r, "max_length"),
             row_bool(&r, "is_pk"),
             row_str_opt(&r, "default_value"),
+            row_str_opt(&r, "comment"),
         );
         out.entry(table_name).or_default().push(col);
     }
