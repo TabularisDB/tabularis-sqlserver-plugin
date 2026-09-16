@@ -4,7 +4,8 @@
 //! protocol implementation behind a tiberius-compatible API) via a custom
 //! deadpool manager.
 //!
-//! Current authentication support is SQL Server username/password. TLS uses
+//! Authentication is SQL Server username/password, or Windows/Kerberos
+//! integrated authentication (`integrated_auth`). TLS uses
 //! Tabularis' shared `ssl_mode`: `disable` turns encryption off,
 //! `verify-full` requires the system trust store and hostname verification,
 //! `require` encrypts while accepting the server certificate, and `prefer`
@@ -208,8 +209,9 @@ impl Manager for BridgeManager {
 /// Build a `mssql_tiberius_bridge::Config` from Tabularis `ConnectionParams`.
 ///
 /// Consumes the shared connection fields used by current Tabularis drivers.
-/// SQL Server authentication is currently username/password only. TLS maps
-/// the standard `ssl_mode` values onto the bridge's encryption policy.
+/// Authenticates via username/password, or Windows/Kerberos integrated
+/// authentication when `integrated_auth` is set. TLS maps the standard
+/// `ssl_mode` values onto the bridge's encryption policy.
 pub fn build_config(
     params: &ConnectionParams,
     settings: &PluginSettings,
@@ -219,10 +221,14 @@ pub fn build_config(
     cfg.host(params.host.as_deref().unwrap_or("localhost"));
     cfg.port(params.port.unwrap_or(1433));
     cfg.database(params.database.primary());
-    cfg.authentication(AuthMethod::sql_server(
-        params.username.as_deref().unwrap_or("sa"),
-        params.password.as_deref().unwrap_or(""),
-    ));
+    if params.integrated_auth {
+        cfg.authentication(AuthMethod::Integrated);
+    } else {
+        cfg.authentication(AuthMethod::sql_server(
+            params.username.as_deref().unwrap_or("sa"),
+            params.password.as_deref().unwrap_or(""),
+        ));
+    }
     cfg.application_name(&settings.application_name);
 
     if params

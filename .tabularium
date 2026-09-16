@@ -94,6 +94,7 @@
     "manage_tables": true,
     "readonly": false,
     "supports_ssl": true,
+    "supports_integrated_auth": true,
     "explain": true
   },
   "type_mappings": {

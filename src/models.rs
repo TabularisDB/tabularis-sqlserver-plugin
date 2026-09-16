@@ -53,6 +53,10 @@ pub struct ConnectionParams {
     pub ssl_ca: Option<String>,
     pub ssl_cert: Option<String>,
     pub ssl_key: Option<String>,
+    /// Windows/Kerberos integrated authentication (SSPI on Windows, GSSAPI
+    /// elsewhere). Set via `Integrated Security=True` / `Trusted_Connection=True`
+    /// in `connection_string`; mutually exclusive with username/password.
+    pub integrated_auth: bool,
     /// URL or ADO.NET/ODBC keyword connection string. It is parsed and
     /// reconciled with the discrete fields before a pool is selected.
     pub connection_string: Option<String>,

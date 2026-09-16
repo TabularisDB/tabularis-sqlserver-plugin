@@ -23,6 +23,7 @@ struct ParsedConnectionString {
     ssl_key: Option<String>,
     encrypt: Option<EncryptSetting>,
     trust_server_certificate: Option<bool>,
+    integrated_auth: Option<bool>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -112,6 +113,19 @@ pub fn resolve_connection_params(params: &ConnectionParams) -> Result<Connection
         str::eq,
         false,
     )?;
+
+    if let Some(integrated_auth) = parsed.integrated_auth {
+        resolved.integrated_auth = integrated_auth;
+    }
+    if resolved.integrated_auth
+        && (non_empty(resolved.username.clone()).is_some()
+            || non_empty(resolved.password.clone()).is_some())
+    {
+        return Err(
+            "SQL Server integrated authentication cannot be combined with a username or password"
+                .into(),
+        );
+    }
 
     Ok(resolved)
 }
@@ -255,12 +269,8 @@ impl ParsedConnectionString {
             }
             "sslkey" | "clientkey" => set_string(&mut self.ssl_key, value, "ssl_key")?,
             "integratedsecurity" | "trustedconnection" => {
-                if parse_bool(key, &value)? {
-                    return Err(
-                        "SQL Server Integrated Authentication is not supported; use User Id and Password"
-                            .into(),
-                    );
-                }
+                let integrated = parse_bool(key, &value)?;
+                set_value(&mut self.integrated_auth, integrated, "integrated_auth")?;
             }
             "authentication" => {
                 if !value.eq_ignore_ascii_case("SqlPassword")
@@ -278,6 +288,7 @@ impl ParsedConnectionString {
             | "connecttimeout"
             | "connectiontimeout"
             | "timeout"
+            | "commandtimeout"
             | "multipleactiveresultsets"
             | "marsconnection"
             | "persistsecurityinfo"
@@ -750,6 +761,36 @@ mod tests {
         let resolved = resolve_connection_params(&input).unwrap();
         assert_eq!(resolved.database.primary(), "app");
         assert_eq!(resolved.ssl_mode.as_deref(), Some("require"));
+    }
+
+    #[test]
+    fn integrated_security_sets_integrated_auth_flag() {
+        let resolved = resolve_connection_params(&params(
+            "Data Source=prod-db3.corp.isepankur.ee;Integrated Security=True;Persist Security Info=False;Pooling=False;MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=True;Application Name=\"SQL Server Management Studio\";Command Timeout=0",
+        ))
+        .unwrap();
+
+        assert_eq!(resolved.host.as_deref(), Some("prod-db3.corp.isepankur.ee"));
+        assert!(resolved.integrated_auth);
+        assert_eq!(resolved.ssl_mode.as_deref(), Some("require"));
+    }
+
+    #[test]
+    fn trusted_connection_alias_also_sets_integrated_auth() {
+        let resolved =
+            resolve_connection_params(&params("Server=localhost;Trusted_Connection=Yes")).unwrap();
+        assert!(resolved.integrated_auth);
+    }
+
+    #[test]
+    fn integrated_auth_rejects_username_and_password() {
+        for connection_string in [
+            "Server=localhost;Integrated Security=True;User Id=sa",
+            "Server=localhost;Integrated Security=True;Password=secret",
+        ] {
+            let error = resolve_connection_params(&params(connection_string)).unwrap_err();
+            assert!(error.contains("integrated authentication"), "{error}");
+        }
     }
 
     #[test]
