@@ -3,9 +3,15 @@ use super::*;
 // --- Query shape assertions (no live server needed) -------------------
 
 #[test]
-fn q_get_tables_queries_sys_tables_and_schemas() {
+fn q_get_tables_queries_descriptions_with_object_scope() {
     assert!(Q_GET_TABLES.contains("sys.tables"));
     assert!(Q_GET_TABLES.contains("sys.schemas"));
+    assert!(Q_GET_TABLES.contains("sys.extended_properties ep"));
+    assert!(Q_GET_TABLES.contains("ep.class = 1"));
+    assert!(Q_GET_TABLES.contains("ep.major_id = t.object_id"));
+    assert!(Q_GET_TABLES.contains("ep.minor_id = 0"));
+    assert!(Q_GET_TABLES.contains("ep.name = N'MS_Description'"));
+    assert!(Q_GET_TABLES.contains("TRY_CONVERT(nvarchar(max), ep.value) AS comment"));
     assert!(Q_GET_TABLES.contains("@P1"));
     assert!(Q_GET_TABLES.contains("ORDER BY t.name"));
 }
@@ -18,6 +24,12 @@ fn q_get_columns_joins_sys_types_and_reports_pk() {
     assert!(Q_GET_COLUMNS.contains("sys.indexes"));
     assert!(Q_GET_COLUMNS.contains("is_primary_key"));
     assert!(Q_GET_COLUMNS.contains("sys.default_constraints"));
+    assert!(Q_GET_COLUMNS.contains("sys.extended_properties ep"));
+    assert!(Q_GET_COLUMNS.contains("ep.class = 1"));
+    assert!(Q_GET_COLUMNS.contains("ep.major_id = c.object_id"));
+    assert!(Q_GET_COLUMNS.contains("ep.minor_id = c.column_id"));
+    assert!(Q_GET_COLUMNS.contains("ep.name = N'MS_Description'"));
+    assert!(Q_GET_COLUMNS.contains("TRY_CONVERT(nvarchar(max), ep.value) AS comment"));
     assert!(Q_GET_COLUMNS.contains("c.is_computed AS is_generated"));
     assert!(Q_GET_COLUMNS.contains("OBJECT_ID(@P1)"));
     assert!(Q_GET_COLUMNS.contains("ORDER BY c.column_id"));
@@ -150,6 +162,12 @@ fn q_get_all_columns_batch_groups_by_table() {
     assert!(Q_GET_ALL_COLUMNS_BATCH.contains("sys.tables"));
     assert!(Q_GET_ALL_COLUMNS_BATCH.contains("sys.schemas"));
     assert!(Q_GET_ALL_COLUMNS_BATCH.contains("sys.types"));
+    assert!(Q_GET_ALL_COLUMNS_BATCH.contains("sys.extended_properties ep"));
+    assert!(Q_GET_ALL_COLUMNS_BATCH.contains("ep.class = 1"));
+    assert!(Q_GET_ALL_COLUMNS_BATCH.contains("ep.major_id = c.object_id"));
+    assert!(Q_GET_ALL_COLUMNS_BATCH.contains("ep.minor_id = c.column_id"));
+    assert!(Q_GET_ALL_COLUMNS_BATCH.contains("ep.name = N'MS_Description'"));
+    assert!(Q_GET_ALL_COLUMNS_BATCH.contains("TRY_CONVERT(nvarchar(max), ep.value) AS comment"));
     assert!(Q_GET_ALL_COLUMNS_BATCH.contains("@P1"));
     assert!(Q_GET_ALL_COLUMNS_BATCH.contains("ORDER BY t.name, c.column_id"));
     // Must emit the table name so the caller can group rows.
@@ -194,6 +212,7 @@ fn build_table_column_populates_string_length() {
         40,
         false,
         None,
+        None,
     );
     assert_eq!(col.name, "note");
     assert_eq!(col.data_type, "nvarchar");
@@ -206,7 +225,17 @@ fn build_table_column_populates_string_length() {
 
 #[test]
 fn build_table_column_leaves_length_none_for_numeric() {
-    let col = build_table_column("id".into(), "int".into(), false, true, false, 4, true, None);
+    let col = build_table_column(
+        "id".into(),
+        "int".into(),
+        false,
+        true,
+        false,
+        4,
+        true,
+        None,
+        None,
+    );
     assert_eq!(col.character_maximum_length, None);
     assert!(col.is_pk);
     assert!(col.is_auto_increment);
@@ -224,6 +253,7 @@ fn build_table_column_honours_max_as_none() {
         -1,
         false,
         None,
+        None,
     );
     assert_eq!(col.character_maximum_length, None);
 }
@@ -239,6 +269,7 @@ fn build_table_column_carries_default_value() {
         8,
         false,
         Some("(getdate())".into()),
+        None,
     );
     assert_eq!(col.default_value, Some("(getdate())".into()));
     assert_eq!(col.character_maximum_length, None);
@@ -255,9 +286,60 @@ fn build_table_column_reports_generated_and_parameterized_lengths() {
         84,
         false,
         None,
+        None,
     );
     assert!(col.is_generated);
     assert_eq!(col.character_maximum_length, Some(42));
+}
+
+#[test]
+fn metadata_descriptions_serialize_verbatim_and_omit_absent_values() {
+    let comment = "Owner's résumé\n次の行";
+    let table = TableInfo {
+        name: "notes".into(),
+        comment: Some(comment.into()),
+    };
+    let table_json = serde_json::to_value(&table).expect("serialize table metadata");
+    assert_eq!(table_json["comment"], comment);
+
+    let plain_table = TableInfo {
+        name: "plain".into(),
+        comment: None,
+    };
+    let plain_table_json =
+        serde_json::to_value(&plain_table).expect("serialize table metadata without comment");
+    assert!(plain_table_json.get("comment").is_none());
+
+    let col = build_table_column(
+        "note".into(),
+        "nvarchar(100)".into(),
+        true,
+        false,
+        false,
+        200,
+        false,
+        None,
+        Some(comment.into()),
+    );
+    assert_eq!(col.comment.as_deref(), Some(comment));
+
+    let json = serde_json::to_value(&col).expect("serialize column metadata");
+    assert_eq!(json["comment"], comment);
+
+    let plain_col = build_table_column(
+        "plain".into(),
+        "int".into(),
+        true,
+        false,
+        false,
+        4,
+        false,
+        None,
+        None,
+    );
+    let plain_col_json =
+        serde_json::to_value(&plain_col).expect("serialize column metadata without comment");
+    assert!(plain_col_json.get("comment").is_none());
 }
 
 // --- build_foreign_keys ----------------------------------------------

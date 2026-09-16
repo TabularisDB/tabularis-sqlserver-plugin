@@ -2,7 +2,7 @@
 //!
 //! The model definitions below are copied verbatim from
 //! `tabularis/src-tauri/src/models.rs` at host commit
-//! `ba0463d3b861ec8fad110126c67e3fc12bac9839`. Re-sync them and regenerate
+//! `3f0780e19191b3d6721ba7e5d8c1224fb8f4e8fe`. Re-sync them and regenerate
 //! `tests/fixtures/conformance/` with `python3 tests/capture_conformance.py`
 //! whenever the host models or plugin RPC surface changes.
 
@@ -20,6 +20,8 @@ use serde_json::Value;
 #[derive(Debug, Serialize, Deserialize)]
 pub struct TableInfo {
     pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub comment: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -35,6 +37,8 @@ pub struct TableColumn {
     pub default_value: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub character_maximum_length: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub comment: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -378,7 +382,23 @@ fn drift_prone_wire_fields_are_exercised() {
         .is_some());
     assert!(batch[1].error.is_some());
 
+    let tables: Vec<TableInfo> = serde_json::from_value(fixture_result("get_tables")).unwrap();
+    assert!(tables.iter().all(|table| table.comment.is_none()));
+    let mut commented_table = fixture_result("get_tables")[0].clone();
+    commented_table["comment"] = Value::String("Owner's résumé\n次の行".into());
+    let commented_table: TableInfo = serde_json::from_value(commented_table).unwrap();
+    assert_eq!(
+        commented_table.comment.as_deref(),
+        Some("Owner's résumé\n次の行")
+    );
+
     let columns: Vec<TableColumn> = serde_json::from_value(fixture_result("get_columns")).unwrap();
+    assert!(columns.iter().all(|column| column.comment.is_none()));
+    let mut commented_column = fixture_result("get_columns")[0].clone();
+    commented_column["comment"] = Value::String("L'état naïve\nΔ".into());
+    let commented_column: TableColumn = serde_json::from_value(commented_column).unwrap();
+    assert_eq!(commented_column.comment.as_deref(), Some("L'état naïve\nΔ"));
+
     let label = columns
         .iter()
         .find(|column| column.name == "label")
