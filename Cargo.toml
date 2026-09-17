@@ -19,8 +19,8 @@ infer = "0.22"
 mssql-tiberius-bridge = "=0.1.0-preview.5"
 # Direct dependency on the underlying protocol crate (lib name `mssql_tds`):
 # the result-set traits used through `Client::inner_mut()` are not re-exported
-# by the bridge. It is pinned in lockstep with the bridge. Default features
-# (sspi/gssapi) stay on to support Windows/Kerberos integrated authentication.
+# by the bridge. Pinned in lockstep with the bridge; default features
+# (sspi/gssapi) stay on for Windows/Kerberos auth.
 mssql-tds-preview = "=0.1.0-preview.1"
 once_cell = "1"
 serde = { version = "1", features = ["derive"] }

@@ -4,9 +4,8 @@
 //! protocol implementation behind a tiberius-compatible API) via a custom
 //! deadpool manager.
 //!
-//! Authentication is SQL Server username/password, or Windows/Kerberos
-//! integrated authentication (`integrated_auth`). TLS uses
-//! Tabularis' shared `ssl_mode`: `disable` turns encryption off,
+//! Auth is username/password or Windows/Kerberos (`integrated_auth`). TLS
+//! uses Tabularis' shared `ssl_mode`: `disable` turns encryption off,
 //! `verify-full` requires the system trust store and hostname verification,
 //! `require` encrypts while accepting the server certificate, and `prefer`
 //! requests encrypted local-development-compatible connections.
@@ -209,9 +208,8 @@ impl Manager for BridgeManager {
 /// Build a `mssql_tiberius_bridge::Config` from Tabularis `ConnectionParams`.
 ///
 /// Consumes the shared connection fields used by current Tabularis drivers.
-/// Authenticates via username/password, or Windows/Kerberos integrated
-/// authentication when `integrated_auth` is set. TLS maps the standard
-/// `ssl_mode` values onto the bridge's encryption policy.
+/// Uses `AuthMethod::Integrated` when `integrated_auth` is set, else
+/// username/password. TLS maps `ssl_mode` onto the bridge's encryption policy.
 pub fn build_config(
     params: &ConnectionParams,
     settings: &PluginSettings,

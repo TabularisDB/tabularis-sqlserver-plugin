@@ -1,9 +1,6 @@
 import type { SlotComponentProps } from "@tabularis/plugin-api";
 
-// `credentialFieldsHidden` / `setCredentialFieldsHidden` are optional here so
-// this keeps working (checkbox visible, login inputs untouched) on a host
-// that predates that hook, and typechecks even before a plugin-api release
-// that types them lands. See TabularisDB/tabularis#780.
+// Optional: falls back gracefully on hosts predating TabularisDB/tabularis#780.
 interface ExtraFieldsContext {
   extra?: Record<string, string>;
   setExtraField?: (key: string, value: string) => void;

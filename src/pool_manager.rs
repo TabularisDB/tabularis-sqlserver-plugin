@@ -21,18 +21,10 @@ type SqlServerPoolMap = Arc<RwLock<HashMap<String, SqlServerPool>>>;
 static SQLSERVER_POOLS: Lazy<SqlServerPoolMap> =
     Lazy::new(|| Arc::new(RwLock::new(HashMap::new())));
 
-/// Stable cache key for a set of connection params.
-///
-/// Prefers the host-assigned `connection_id`; falls back to
-/// host:port:database for ad-hoc connections, with the auth mode (SQL
-/// username, or `integrated`) folded in below. The username is essential:
-/// bastions multiplex many targets behind a single host:port and pick the
-/// backend from the username, so without it two different targets would share
-/// one pool. TLS settings are folded in too, so switching `ssl_mode` or
-/// toggling integrated authentication on a saved connection never reuses a
-/// pool built under a different policy.
-/// Pre-existing gap, unchanged by that fix: the password is not part of the
-/// key, so rotating a saved SQL login's password still reuses its pool.
+/// Stable cache key. Prefers `connection_id`; else host:port:database.
+/// Folds in username (bastions route by it), ssl_mode, and auth mode, so
+/// none of those can silently reuse a pool built under different ones.
+/// Gap: password isn't in the key, so rotating it still reuses the pool.
 fn build_connection_key(params: &ConnectionParams) -> String {
     let ssl_mode = params.ssl_mode.as_deref().unwrap_or("prefer");
     let auth = if params.integrated_auth {
