@@ -43,80 +43,87 @@ pub fn resolve_connection_params(params: &ConnectionParams) -> Result<Connection
     resolved.ssl_mode = non_empty(resolved.ssl_mode.take())
         .map(|mode| normalize_ssl_mode(&mode))
         .transpose()?;
+    if resolved
+        .extra
+        .get("integrated_auth")
+        .is_some_and(|v| v == "true")
+    {
+        resolved.integrated_auth = true;
+    }
 
-    let Some(connection_string) = params
+    let connection_string = params
         .connection_string
         .as_deref()
         .map(str::trim)
-        .filter(|value| !value.is_empty())
-    else {
-        return Ok(resolved);
-    };
+        .filter(|value| !value.is_empty());
 
-    let parsed = ParsedConnectionString::parse(connection_string)?;
-    reconcile_string(
-        "host",
-        &mut resolved.host,
-        parsed.host,
-        |left, right| left.eq_ignore_ascii_case(right),
-        false,
-    )?;
-    reconcile_value("port", &mut resolved.port, parsed.port)?;
-    reconcile_string(
-        "username",
-        &mut resolved.username,
-        parsed.username,
-        str::eq,
-        false,
-    )?;
-    reconcile_string(
-        "password",
-        &mut resolved.password,
-        parsed.password,
-        str::eq,
-        true,
-    )?;
+    if let Some(connection_string) = connection_string {
+        let parsed = ParsedConnectionString::parse(connection_string)?;
+        reconcile_string(
+            "host",
+            &mut resolved.host,
+            parsed.host,
+            |left, right| left.eq_ignore_ascii_case(right),
+            false,
+        )?;
+        reconcile_value("port", &mut resolved.port, parsed.port)?;
+        reconcile_string(
+            "username",
+            &mut resolved.username,
+            parsed.username,
+            str::eq,
+            false,
+        )?;
+        reconcile_string(
+            "password",
+            &mut resolved.password,
+            parsed.password,
+            str::eq,
+            true,
+        )?;
 
-    if let Some(database) = parsed.database {
-        let discrete = resolved.database.primary().trim();
-        if !discrete.is_empty() && discrete != database {
-            return Err(contradiction("database", discrete, &database, false));
+        if let Some(database) = parsed.database {
+            let discrete = resolved.database.primary().trim();
+            if !discrete.is_empty() && discrete != database {
+                return Err(contradiction("database", discrete, &database, false));
+            }
+            resolved.database = DatabaseSelection::Single(database);
         }
-        resolved.database = DatabaseSelection::Single(database);
+
+        reconcile_string(
+            "ssl_mode",
+            &mut resolved.ssl_mode,
+            parsed.ssl_mode,
+            str::eq,
+            false,
+        )?;
+        reconcile_string(
+            "ssl_ca",
+            &mut resolved.ssl_ca,
+            parsed.ssl_ca,
+            str::eq,
+            false,
+        )?;
+        reconcile_string(
+            "ssl_cert",
+            &mut resolved.ssl_cert,
+            parsed.ssl_cert,
+            str::eq,
+            false,
+        )?;
+        reconcile_string(
+            "ssl_key",
+            &mut resolved.ssl_key,
+            parsed.ssl_key,
+            str::eq,
+            false,
+        )?;
+
+        if let Some(integrated_auth) = parsed.integrated_auth {
+            resolved.integrated_auth = integrated_auth;
+        }
     }
 
-    reconcile_string(
-        "ssl_mode",
-        &mut resolved.ssl_mode,
-        parsed.ssl_mode,
-        str::eq,
-        false,
-    )?;
-    reconcile_string(
-        "ssl_ca",
-        &mut resolved.ssl_ca,
-        parsed.ssl_ca,
-        str::eq,
-        false,
-    )?;
-    reconcile_string(
-        "ssl_cert",
-        &mut resolved.ssl_cert,
-        parsed.ssl_cert,
-        str::eq,
-        false,
-    )?;
-    reconcile_string(
-        "ssl_key",
-        &mut resolved.ssl_key,
-        parsed.ssl_key,
-        str::eq,
-        false,
-    )?;
-
-    if let Some(integrated_auth) = parsed.integrated_auth {
-        resolved.integrated_auth = integrated_auth;
-    }
     if resolved.integrated_auth
         && (non_empty(resolved.username.clone()).is_some()
             || non_empty(resolved.password.clone()).is_some())
@@ -791,6 +798,31 @@ mod tests {
             let error = resolve_connection_params(&params(connection_string)).unwrap_err();
             assert!(error.contains("integrated authentication"), "{error}");
         }
+    }
+
+    #[test]
+    fn extra_field_sets_integrated_auth_without_a_connection_string() {
+        let mut input = ConnectionParams {
+            host: Some("localhost".into()),
+            ..Default::default()
+        };
+        input.extra.insert("integrated_auth".into(), "true".into());
+
+        let resolved = resolve_connection_params(&input).unwrap();
+        assert!(resolved.integrated_auth);
+    }
+
+    #[test]
+    fn extra_field_integrated_auth_also_rejects_username_and_password() {
+        let mut input = ConnectionParams {
+            host: Some("localhost".into()),
+            username: Some("sa".into()),
+            ..Default::default()
+        };
+        input.extra.insert("integrated_auth".into(), "true".into());
+
+        let error = resolve_connection_params(&input).unwrap_err();
+        assert!(error.contains("integrated authentication"), "{error}");
     }
 
     #[test]

@@ -94,9 +94,15 @@
     "manage_tables": true,
     "readonly": false,
     "supports_ssl": true,
-    "supports_integrated_auth": true,
     "explain": true
   },
+  "ui_extensions": [
+    {
+      "slot": "connection-modal.extra_fields",
+      "module": "ui/dist/index.js",
+      "driver": "sqlserver"
+    }
+  ],
   "type_mappings": {
     "TIMESTAMP": "DATETIME2",
     "BOOLEAN": "BIT",

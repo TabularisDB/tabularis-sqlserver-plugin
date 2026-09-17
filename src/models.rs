@@ -54,9 +54,15 @@ pub struct ConnectionParams {
     pub ssl_cert: Option<String>,
     pub ssl_key: Option<String>,
     /// Windows/Kerberos integrated authentication (SSPI on Windows, GSSAPI
-    /// elsewhere). Set via `Integrated Security=True` / `Trusted_Connection=True`
-    /// in `connection_string`; mutually exclusive with username/password.
+    /// elsewhere). Resolved from `extra["integrated_auth"] == "true"` (set by
+    /// this plugin's own `connection-modal.extra_fields` UI extension) or
+    /// from `Integrated Security=True` / `Trusted_Connection=True` in
+    /// `connection_string`; mutually exclusive with username/password.
     pub integrated_auth: bool,
+    /// Opaque, plugin-specific connection fields forwarded verbatim by the
+    /// host. The "Use Windows Authentication" checkbox writes
+    /// `integrated_auth` here through `setExtraField`.
+    pub extra: HashMap<String, String>,
     /// URL or ADO.NET/ODBC keyword connection string. It is parsed and
     /// reconciled with the discrete fields before a pool is selected.
     pub connection_string: Option<String>,

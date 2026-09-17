@@ -80,9 +80,8 @@ This plugin enables Tabularis to connect to SQL Server instances, providing sche
 | `host` | `localhost` | Yes unless using `connection_string` | SQL Server hostname or IP address |
 | `port` | `1433` | No | TDS port |
 | `database` | — | Yes unless using `connection_string` | Database the pool connects to |
-| `username` | `sa` | Yes unless `integrated_auth` or using `connection_string` | SQL-authenticated login |
+| `username` | `sa` | Yes unless integrated authentication is on or using `connection_string` | SQL-authenticated login |
 | `password` | — | If required by the server | Login password; redacted from connection errors |
-| `integrated_auth` | `false` | No | Windows/Kerberos integrated authentication (SSPI on Windows, GSSAPI elsewhere); rejects `username`/`password` |
 | `ssl_mode` | `prefer` | No | `disable`, `prefer`, `require`, or `verify-full` |
 | `ssl_ca` | — | No | Rejected; strict TLS uses the system trust store |
 | `ssl_cert` / `ssl_key` | — | No | Rejected; client-certificate authentication is not supported |
@@ -105,11 +104,23 @@ braces preserve semicolons inside values:
 Server=tcp:localhost,1433;Database=master;User Id=sa;Password={p;assword};Encrypt=true;TrustServerCertificate=true;
 ```
 
-`integrated_auth` uses SSPI on Windows (no extra setup) and GSSAPI on
-Linux/macOS, loaded at runtime via `dlopen`. The binary builds and starts
-without it, but connecting fails at runtime if `libgssapi_krb5` (package
-`libgssapi-krb5-2` on Debian/Ubuntu, `krb5-libs` on RHEL/Alpine) is missing,
-or without a valid Kerberos ticket (`kinit`) and `/etc/krb5.conf`.
+### Windows/Kerberos integrated authentication
+
+The connection modal's "Use Windows Authentication" checkbox is a
+[UI extension](https://github.com/TabularisDB/tabularis/blob/main/plugins/PLUGIN_GUIDE.md#3b-ui-extensions)
+this plugin contributes to the host's `connection-modal.extra_fields` slot
+(`ui/`) — there is no dedicated connection field for it. Checking it writes
+`extra.integrated_auth = "true"` (the host's generic, plugin-opaque field map)
+and hides the username/password inputs. The same flag can be set directly via
+`Integrated Security=True` / `Trusted_Connection=True` in `connection_string`
+on hosts without the UI extension mechanism; either source rejects a
+combined username or password.
+
+It uses SSPI on Windows (no extra setup) and GSSAPI on Linux/macOS, loaded at
+runtime via `dlopen`. The binary builds and starts without it, but connecting
+fails at runtime if `libgssapi_krb5` (package `libgssapi-krb5-2` on
+Debian/Ubuntu, `krb5-libs` on RHEL/Alpine) is missing, or without a valid
+Kerberos ticket (`kinit`) and `/etc/krb5.conf`.
 
 A connection string may be combined with discrete fields. Values explicitly
 present in the string are authoritative, while discrete fields fill only
