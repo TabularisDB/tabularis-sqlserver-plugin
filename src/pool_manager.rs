@@ -24,12 +24,15 @@ static SQLSERVER_POOLS: Lazy<SqlServerPoolMap> =
 /// Stable cache key for a set of connection params.
 ///
 /// Prefers the host-assigned `connection_id`; falls back to
-/// host:port:user:database for ad-hoc connections. The username is essential:
+/// host:port:database for ad-hoc connections, with the auth mode (SQL
+/// username, or `integrated`) folded in below. The username is essential:
 /// bastions multiplex many targets behind a single host:port and pick the
 /// backend from the username, so without it two different targets would share
-/// one pool. TLS settings and the auth mode are folded in so switching
-/// `ssl_mode` or toggling integrated authentication on a saved connection
-/// never reuses a pool built under a different policy or credentials.
+/// one pool. TLS settings are folded in too, so switching `ssl_mode` or
+/// toggling integrated authentication on a saved connection never reuses a
+/// pool built under a different policy.
+/// Pre-existing gap, unchanged by that fix: the password is not part of the
+/// key, so rotating a saved SQL login's password still reuses its pool.
 fn build_connection_key(params: &ConnectionParams) -> String {
     let ssl_mode = params.ssl_mode.as_deref().unwrap_or("prefer");
     let auth = if params.integrated_auth {

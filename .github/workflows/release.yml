@@ -134,7 +134,7 @@ jobs:
         shell: bash
         working-directory: ui
         run: |
-          npm install --no-audit --no-fund
+          npm ci --no-audit --no-fund
           npm run build
 
       - name: Build EXPLAIN parser

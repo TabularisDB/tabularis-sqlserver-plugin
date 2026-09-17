@@ -43,12 +43,10 @@ pub fn resolve_connection_params(params: &ConnectionParams) -> Result<Connection
     resolved.ssl_mode = non_empty(resolved.ssl_mode.take())
         .map(|mode| normalize_ssl_mode(&mode))
         .transpose()?;
-    if resolved
-        .extra
-        .get("integrated_auth")
-        .is_some_and(|v| v == "true")
-    {
-        resolved.integrated_auth = true;
+    if let Some(value) = resolved.extra.get("integrated_auth") {
+        if parse_bool("integrated_auth", value)? {
+            resolved.integrated_auth = true;
+        }
     }
 
     let connection_string = params
@@ -120,6 +118,9 @@ pub fn resolve_connection_params(params: &ConnectionParams) -> Result<Connection
         )?;
 
         if let Some(integrated_auth) = parsed.integrated_auth {
+            if resolved.integrated_auth && !integrated_auth {
+                return Err(contradiction("integrated_auth", "true", "false", false));
+            }
             resolved.integrated_auth = integrated_auth;
         }
     }
@@ -823,6 +824,30 @@ mod tests {
 
         let error = resolve_connection_params(&input).unwrap_err();
         assert!(error.contains("integrated authentication"), "{error}");
+    }
+
+    #[test]
+    fn extra_field_and_connection_string_agreeing_on_integrated_auth_is_accepted() {
+        let mut input = ConnectionParams {
+            connection_string: Some("Server=localhost;Integrated Security=True".into()),
+            ..Default::default()
+        };
+        input.extra.insert("integrated_auth".into(), "true".into());
+
+        let resolved = resolve_connection_params(&input).unwrap();
+        assert!(resolved.integrated_auth);
+    }
+
+    #[test]
+    fn extra_field_and_connection_string_disagreeing_on_integrated_auth_is_rejected() {
+        let mut input = ConnectionParams {
+            connection_string: Some("Server=localhost;Integrated Security=False".into()),
+            ..Default::default()
+        };
+        input.extra.insert("integrated_auth".into(), "true".into());
+
+        let error = resolve_connection_params(&input).unwrap_err();
+        assert!(error.contains("integrated_auth"), "{error}");
     }
 
     #[test]

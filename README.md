@@ -80,7 +80,7 @@ This plugin enables Tabularis to connect to SQL Server instances, providing sche
 | `host` | `localhost` | Yes unless using `connection_string` | SQL Server hostname or IP address |
 | `port` | `1433` | No | TDS port |
 | `database` | — | Yes unless using `connection_string` | Database the pool connects to |
-| `username` | `sa` | Yes unless integrated authentication is on or using `connection_string` | SQL-authenticated login |
+| `username` | `sa` | Yes, unless integrated authentication is enabled or `connection_string` is used | SQL-authenticated login |
 | `password` | — | If required by the server | Login password; redacted from connection errors |
 | `ssl_mode` | `prefer` | No | `disable`, `prefer`, `require`, or `verify-full` |
 | `ssl_ca` | — | No | Rejected; strict TLS uses the system trust store |
@@ -111,10 +111,11 @@ The connection modal's "Use Windows Authentication" checkbox is a
 this plugin contributes to the host's `connection-modal.extra_fields` slot
 (`ui/`) — there is no dedicated connection field for it. Checking it writes
 `extra.integrated_auth = "true"` (the host's generic, plugin-opaque field map)
-and hides the username/password inputs. The same flag can be set directly via
+and, on a host implementing [TabularisDB/tabularis#780](https://github.com/TabularisDB/tabularis/pull/780),
+hides the username/password inputs. The same flag can be set directly via
 `Integrated Security=True` / `Trusted_Connection=True` in `connection_string`
-on hosts without the UI extension mechanism; either source rejects a
-combined username or password.
+on any host, with or without the UI extension mechanism; either source
+rejects a combined username or password.
 
 It uses SSPI on Windows (no extra setup) and GSSAPI on Linux/macOS, loaded at
 runtime via `dlopen`. The binary builds and starts without it, but connecting
