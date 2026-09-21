@@ -290,6 +290,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "crunchy"
+version = "0.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "460fbee9c2c2f33933d720630a6a0bac33ba7053db5344fac858d4b8952d77d5"
+
+[[package]]
 name = "data-encoding"
 version = "2.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -322,6 +328,9 @@ name = "deadpool-runtime"
 version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "092966b41edc516079bdf31ec78a2e0588d1d0c08f78b91d8307215928642b2b"
+dependencies = [
+ "tokio",
+]
 
 [[package]]
 name = "deadpool-runtime"
@@ -548,6 +557,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "half"
+version = "2.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6ea2d84b969582b4b1864a92dc5d27cd2b77b622a8d79306834f1be5ba20d84b"
+dependencies = [
+ "cfg-if",
+ "crunchy",
+ "zerocopy",
+]
+
+[[package]]
 name = "hashbrown"
 version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -708,6 +728,43 @@ dependencies = [
 ]
 
 [[package]]
+name = "mssql-tds"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "24af8cb7710c93995782f5f04fc2a10c79b5e073034f104fea9b98872b67e71b"
+dependencies = [
+ "async-trait",
+ "bigdecimal",
+ "bitflags",
+ "byteorder",
+ "bytes",
+ "core-foundation",
+ "dns-lookup",
+ "encoding_rs",
+ "futures",
+ "half",
+ "hostname",
+ "libc",
+ "native-tls",
+ "openssl",
+ "pretty-hex",
+ "security-framework",
+ "security-framework-sys",
+ "socket2 0.5.10",
+ "thiserror",
+ "tokio",
+ "tokio-native-tls",
+ "tokio-util",
+ "tracing",
+ "uuid",
+ "winapi",
+ "windows",
+ "windows-sys 0.59.0",
+ "x509-parser",
+ "zeroize",
+]
+
+[[package]]
 name = "mssql-tds-preview"
 version = "0.1.0-preview.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -739,16 +796,16 @@ dependencies = [
 
 [[package]]
 name = "mssql-tiberius-bridge"
-version = "0.1.0-preview.5"
+version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1d316503c47643f15161a82202631b52272448a8ee96bc0eae4ffed58f8c1c82"
+checksum = "2834eceb41342e0ee89b94e5e94af8676ec43d73baa0364d7e124f0368e980a1"
 dependencies = [
  "async-stream",
  "async-trait",
  "chrono",
  "deadpool 0.12.3",
  "futures-core",
- "mssql-tds-preview",
+ "mssql-tds",
  "rust_decimal",
  "serde_json",
  "thiserror",
@@ -1802,6 +1859,15 @@ dependencies = [
 
 [[package]]
 name = "windows-sys"
+version = "0.59.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1e38bc4d79ed67fd075bcc251a1c39b32a1776bbe92e5bef1f0bf1f8c531853b"
+dependencies = [
+ "windows-targets 0.52.6",
+]
+
+[[package]]
+name = "windows-sys"
 version = "0.60.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f2f500e4d28234f72040990ec9d39e3a6b950f9f22d3dba18416c35882612bcb"
@@ -1996,6 +2062,26 @@ name = "zerocopy-derive"
 version = "0.8.55"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0fe976fb70c78cd64cccfe3a6fc142244e8a77b70959b30faf9d0ac37ee228eb"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
+name = "zeroize"
+version = "1.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e13c156562582aa81c60cb29407084cdb54c4164760106ab78e6c5b0858cf64e"
+dependencies = [
+ "zeroize_derive",
+]
+
+[[package]]
+name = "zeroize_derive"
+version = "1.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3c50655cbb0fe3fc43170059e702f1ce5e19b84cec58dc87b037a09935c2f328"
 dependencies = [
  "proc-macro2",
  "quote",
