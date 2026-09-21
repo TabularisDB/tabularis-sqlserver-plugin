@@ -7,9 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-The release candidate version is `1.0.0-beta.1`; it has not yet been tagged or
-published. Publication is tracked in
-[issue #4](https://github.com/TabularisDB/tabularis-sqlserver-plugin/issues/4).
+## [1.0.0-beta.2] - 2026-09-21
+
+### Added
+
+- Windows/Kerberos integrated authentication via SSPI/GSSAPI, enabled through
+  the plugin's Windows Authentication checkbox or `Integrated Security=True` /
+  `Trusted_Connection=True` connection-string options (#25, thanks @egertaia).
+- SQL Server table and column comments from extended properties (#24).
+
+### Changed
+
+- Raised the minimum Tabularis version to `0.24.1-2`, first shipped in
+  `nightly-20260918-992d969`, for credential-field hiding and keychain cleanup.
+- Accept `Command Timeout` in connection strings as a client-side no-op;
+  query timeouts remain controlled by the plugin settings.
+
+### Fixed
+
+- Synchronize credential-field visibility when reopening a saved integrated
+  authentication connection, not only when toggling the checkbox.
+- Separate SQL and integrated authentication in connection-pool cache keys.
+- Reject username/password credentials combined with integrated authentication.
+
+## [1.0.0-beta.1] - 2026-09-03
 
 ### Breaking
 
@@ -79,4 +100,6 @@ published. Publication is tracked in
   regression coverage for pool identity, million-row truncation and concurrent
   responsiveness.
 
-[Unreleased]: https://github.com/TabularisDB/tabularis-sqlserver-plugin/compare/main...HEAD
+[Unreleased]: https://github.com/TabularisDB/tabularis-sqlserver-plugin/compare/v1.0.0-beta.2...HEAD
+[1.0.0-beta.2]: https://github.com/TabularisDB/tabularis-sqlserver-plugin/compare/v1.0.0-beta.1...v1.0.0-beta.2
+[1.0.0-beta.1]: https://github.com/TabularisDB/tabularis-sqlserver-plugin/releases/tag/v1.0.0-beta.1

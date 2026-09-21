@@ -1,7 +1,7 @@
 {
   "name": "@tabularis/sqlserver-plugin-ui",
   "private": true,
-  "version": "1.0.0-beta.1",
+  "version": "1.0.0-beta.2",
   "description": "Connection-modal UI extension for the SQL Server plugin (Windows Authentication checkbox).",
   "type": "module",
   "scripts": {

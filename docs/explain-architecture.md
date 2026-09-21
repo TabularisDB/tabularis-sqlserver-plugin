@@ -15,7 +15,9 @@ The contract is implemented on the release-candidate branches. Core PR
 [TabularisDB/tabularis#688](https://github.com/TabularisDB/tabularis/pull/688)
 contains the registry, raw plugin protocol, manifest plumbing, author guide and
 isolated desktop loader. This repository contains the TypeScript parser, ESM
-package, IIFE and raw Rust handoff; `.tabularium` requires Tabularis 0.23.0.
+package, IIFE and raw Rust handoff. The EXPLAIN contract requires Tabularis
+0.23.0; plugin v1.0.0-beta.2 raises `.tabularium`'s overall runtime floor to
+0.24.1-2 for the integrated-authentication UI and credential lifecycle.
 The standalone site integration is in
 [TabularisDB/explain-plan#2](https://github.com/TabularisDB/explain-plan/pull/2).
 
