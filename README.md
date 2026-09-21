@@ -18,9 +18,14 @@ A [Microsoft SQL Server](https://www.microsoft.com/sql-server) plugin for [Tabul
 
 This plugin enables Tabularis to connect to SQL Server instances, providing schema introspection, query execution, full CRUD, DDL, trigger and stored-routine management, BLOB handling, database-user management, and visual execution plans through a JSON-RPC 2.0 over stdio interface. It is written in Rust on top of Microsoft's [`mssql-tds`](https://github.com/microsoft/mssql-rust) protocol implementation (via [`mssql-tiberius-bridge`](https://crates.io/crates/mssql-tiberius-bridge)) with [`deadpool`](https://crates.io/crates/deadpool) connection pooling.
 
-> **Requires Tabularis v0.23.0 or later.** This plugin relies on raw plugin
-> EXPLAIN output and plugin-provided parser bundle loading targeted for that
-> release. Do not publish this candidate before a compatible host is available.
+> **Requires Tabularis v0.24.1-2 or later.** This plugin relies on raw plugin
+> EXPLAIN output and plugin-provided parser bundle loading (v0.23.0) plus the
+> connection-modal credential-hiding hook from
+> [TabularisDB/tabularis#780](https://github.com/TabularisDB/tabularis/pull/780),
+> first shipped in nightly
+> [nightly-20260918-992d969](https://github.com/TabularisDB/tabularis/releases/tag/nightly-20260918-992d969)
+> (app version `0.24.1-2`). Do not publish this candidate before a compatible
+> host is available.
 
 **Discord** — [Join our Discord server](https://discord.com/invite/K2hmhfHRSt) and chat with the maintainers.
 
@@ -111,8 +116,9 @@ The connection modal's "Use Windows Authentication" checkbox is a
 this plugin contributes to the host's `connection-modal.extra_fields` slot
 (`ui/`) — there is no dedicated connection field for it. Checking it writes
 `extra.integrated_auth = "true"` (the host's generic, plugin-opaque field map)
-and, on a host implementing [TabularisDB/tabularis#780](https://github.com/TabularisDB/tabularis/pull/780),
-hides the username/password inputs. The same flag can be set directly via
+and, on a host implementing [TabularisDB/tabularis#780](https://github.com/TabularisDB/tabularis/pull/780)
+(Tabularis `0.24.1-2` or later), hides the username/password inputs — both when
+the box is ticked and when a saved connection with the flag is reopened. The same flag can be set directly via
 `Integrated Security=True` / `Trusted_Connection=True` in `connection_string`
 on any host, with or without the UI extension mechanism; either source
 rejects a combined username or password.

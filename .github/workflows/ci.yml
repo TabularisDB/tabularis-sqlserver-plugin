@@ -94,6 +94,10 @@ jobs:
         working-directory: ui
         run: npm run typecheck
 
+      - name: Run tests
+        working-directory: ui
+        run: npm test
+
       - name: Build
         working-directory: ui
         run: npm run build
