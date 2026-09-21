@@ -18,9 +18,14 @@ A [Microsoft SQL Server](https://www.microsoft.com/sql-server) plugin for [Tabul
 
 This plugin enables Tabularis to connect to SQL Server instances, providing schema introspection, query execution, full CRUD, DDL, trigger and stored-routine management, BLOB handling, database-user management, and visual execution plans through a JSON-RPC 2.0 over stdio interface. It is written in Rust on top of Microsoft's [`mssql-tds`](https://github.com/microsoft/mssql-rust) protocol implementation (via [`mssql-tiberius-bridge`](https://crates.io/crates/mssql-tiberius-bridge)) with [`deadpool`](https://crates.io/crates/deadpool) connection pooling.
 
-> **Requires Tabularis v0.23.0 or later.** This plugin relies on raw plugin
-> EXPLAIN output and plugin-provided parser bundle loading targeted for that
-> release. Do not publish this candidate before a compatible host is available.
+> **Requires Tabularis v0.24.1-2 or later.** This plugin relies on raw plugin
+> EXPLAIN output and plugin-provided parser bundle loading (v0.23.0) plus the
+> connection-modal credential-hiding hook from
+> [TabularisDB/tabularis#780](https://github.com/TabularisDB/tabularis/pull/780),
+> first shipped in nightly
+> [nightly-20260918-992d969](https://github.com/TabularisDB/tabularis/releases/tag/nightly-20260918-992d969)
+> (app version `0.24.1-2`). Do not publish this candidate before a compatible
+> host is available.
 
 **Discord** — [Join our Discord server](https://discord.com/invite/K2hmhfHRSt) and chat with the maintainers.
 
@@ -80,7 +85,7 @@ This plugin enables Tabularis to connect to SQL Server instances, providing sche
 | `host` | `localhost` | Yes unless using `connection_string` | SQL Server hostname or IP address |
 | `port` | `1433` | No | TDS port |
 | `database` | — | Yes unless using `connection_string` | Database the pool connects to |
-| `username` | `sa` | Yes unless using `connection_string` | SQL-authenticated login |
+| `username` | `sa` | Yes, unless integrated authentication is enabled or `connection_string` is used | SQL-authenticated login |
 | `password` | — | If required by the server | Login password; redacted from connection errors |
 | `ssl_mode` | `prefer` | No | `disable`, `prefer`, `require`, or `verify-full` |
 | `ssl_ca` | — | No | Rejected; strict TLS uses the system trust store |
@@ -103,6 +108,26 @@ braces preserve semicolons inside values:
 ```text
 Server=tcp:localhost,1433;Database=master;User Id=sa;Password={p;assword};Encrypt=true;TrustServerCertificate=true;
 ```
+
+### Windows/Kerberos integrated authentication
+
+The connection modal's "Use Windows Authentication" checkbox is a
+[UI extension](https://github.com/TabularisDB/tabularis/blob/main/plugins/PLUGIN_GUIDE.md#3b-ui-extensions)
+this plugin contributes to the host's `connection-modal.extra_fields` slot
+(`ui/`) — there is no dedicated connection field for it. Checking it writes
+`extra.integrated_auth = "true"` (the host's generic, plugin-opaque field map)
+and, on a host implementing [TabularisDB/tabularis#780](https://github.com/TabularisDB/tabularis/pull/780)
+(Tabularis `0.24.1-2` or later), hides the username/password inputs — both when
+the box is ticked and when a saved connection with the flag is reopened. The same flag can be set directly via
+`Integrated Security=True` / `Trusted_Connection=True` in `connection_string`
+on any host, with or without the UI extension mechanism; either source
+rejects a combined username or password.
+
+It uses SSPI on Windows (no extra setup) and GSSAPI on Linux/macOS, loaded at
+runtime via `dlopen`. The binary builds and starts without it, but connecting
+fails at runtime if `libgssapi_krb5` (package `libgssapi-krb5-2` on
+Debian/Ubuntu, `krb5-libs` on RHEL/Alpine) is missing, or without a valid
+Kerberos ticket (`kinit`) and `/etc/krb5.conf`.
 
 A connection string may be combined with discrete fields. Values explicitly
 present in the string are authoritative, while discrete fields fill only
@@ -339,7 +364,7 @@ remaining pools.
 
 ## Known Limitations
 
-- SQL authentication only; Azure AD and Windows Integrated Authentication are follow-up work.
+- SQL authentication and Windows/Kerberos integrated authentication (`integrated_auth`) are supported; Azure AD authentication is follow-up work.
 - Primary-key membership changes are disabled: the single-column alteration API cannot safely preserve composite PKs and referencing foreign keys.
 - Custom CA files are rejected explicitly; strict verification uses the system trust store.
 - SQL Server has indexed views, not materialized views. Indexed views are maintained synchronously and have no refresh operation, so `get_materialized_views`, `get_materialized_view_columns`, `get_materialized_view_definition`, and `refresh_materialized_view` deliberately return `-32601` rather than pretending the features are equivalent.

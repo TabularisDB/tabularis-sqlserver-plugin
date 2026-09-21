@@ -53,6 +53,11 @@ pub struct ConnectionParams {
     pub ssl_ca: Option<String>,
     pub ssl_cert: Option<String>,
     pub ssl_key: Option<String>,
+    /// Windows/Kerberos auth (SSPI/GSSAPI). Set via `extra["integrated_auth"]`
+    /// or `Integrated Security=True` in `connection_string`; excludes username/password.
+    pub integrated_auth: bool,
+    /// Opaque plugin-specific fields forwarded verbatim by the host.
+    pub extra: HashMap<String, String>,
     /// URL or ADO.NET/ODBC keyword connection string. It is parsed and
     /// reconciled with the discrete fields before a pool is selected.
     pub connection_string: Option<String>,

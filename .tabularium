@@ -53,7 +53,7 @@
   "readme": "README.md",
   "homepage": "https://github.com/TabularisDB/tabularis-sqlserver-plugin",
   "documentation_url": "https://github.com/TabularisDB/tabularis-sqlserver-plugin#readme",
-  "min_runtime_version": "0.23.0",
+  "min_runtime_version": "0.24.1-2",
   "support": {
     "issues_url": "https://github.com/TabularisDB/tabularis-sqlserver-plugin/issues"
   },
@@ -96,6 +96,13 @@
     "supports_ssl": true,
     "explain": true
   },
+  "ui_extensions": [
+    {
+      "slot": "connection-modal.extra_fields",
+      "module": "ui/dist/index.js",
+      "driver": "sqlserver"
+    }
+  ],
   "type_mappings": {
     "TIMESTAMP": "DATETIME2",
     "BOOLEAN": "BIT",

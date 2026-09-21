@@ -75,6 +75,33 @@ jobs:
         working-directory: explain
         run: pnpm build
 
+  ui-extension:
+    name: Connection-modal UI extension
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22.13"
+
+      - name: Install dependencies
+        working-directory: ui
+        run: npm ci
+
+      - name: Typecheck
+        working-directory: ui
+        run: npm run typecheck
+
+      - name: Run tests
+        working-directory: ui
+        run: npm test
+
+      - name: Build
+        working-directory: ui
+        run: npm run build
+
   validate-manifest:
     name: Validate .tabularium manifest
     runs-on: ubuntu-latest

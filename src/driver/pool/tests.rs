@@ -53,6 +53,15 @@ fn build_config_empty_credentials_do_not_panic() {
 }
 
 #[test]
+fn build_config_accepts_integrated_auth_without_credentials() {
+    let mut params = base_params(Some("localhost"), Some(1433), "master");
+    params.username = None;
+    params.password = None;
+    params.integrated_auth = true;
+    assert!(build_config(&params, &PluginSettings::default()).is_ok());
+}
+
+#[test]
 fn manager_is_clone_send_sync() {
     fn assert_send<T: Send>() {}
     fn assert_sync<T: Sync>() {}

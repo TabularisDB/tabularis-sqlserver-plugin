@@ -23,6 +23,7 @@ struct ParsedConnectionString {
     ssl_key: Option<String>,
     encrypt: Option<EncryptSetting>,
     trust_server_certificate: Option<bool>,
+    integrated_auth: Option<bool>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -42,76 +43,97 @@ pub fn resolve_connection_params(params: &ConnectionParams) -> Result<Connection
     resolved.ssl_mode = non_empty(resolved.ssl_mode.take())
         .map(|mode| normalize_ssl_mode(&mode))
         .transpose()?;
+    if let Some(value) = resolved.extra.get("integrated_auth") {
+        if parse_bool("integrated_auth", value)? {
+            resolved.integrated_auth = true;
+        }
+    }
 
-    let Some(connection_string) = params
+    let connection_string = params
         .connection_string
         .as_deref()
         .map(str::trim)
-        .filter(|value| !value.is_empty())
-    else {
-        return Ok(resolved);
-    };
+        .filter(|value| !value.is_empty());
 
-    let parsed = ParsedConnectionString::parse(connection_string)?;
-    reconcile_string(
-        "host",
-        &mut resolved.host,
-        parsed.host,
-        |left, right| left.eq_ignore_ascii_case(right),
-        false,
-    )?;
-    reconcile_value("port", &mut resolved.port, parsed.port)?;
-    reconcile_string(
-        "username",
-        &mut resolved.username,
-        parsed.username,
-        str::eq,
-        false,
-    )?;
-    reconcile_string(
-        "password",
-        &mut resolved.password,
-        parsed.password,
-        str::eq,
-        true,
-    )?;
+    if let Some(connection_string) = connection_string {
+        let parsed = ParsedConnectionString::parse(connection_string)?;
+        reconcile_string(
+            "host",
+            &mut resolved.host,
+            parsed.host,
+            |left, right| left.eq_ignore_ascii_case(right),
+            false,
+        )?;
+        reconcile_value("port", &mut resolved.port, parsed.port)?;
+        reconcile_string(
+            "username",
+            &mut resolved.username,
+            parsed.username,
+            str::eq,
+            false,
+        )?;
+        reconcile_string(
+            "password",
+            &mut resolved.password,
+            parsed.password,
+            str::eq,
+            true,
+        )?;
 
-    if let Some(database) = parsed.database {
-        let discrete = resolved.database.primary().trim();
-        if !discrete.is_empty() && discrete != database {
-            return Err(contradiction("database", discrete, &database, false));
+        if let Some(database) = parsed.database {
+            let discrete = resolved.database.primary().trim();
+            if !discrete.is_empty() && discrete != database {
+                return Err(contradiction("database", discrete, &database, false));
+            }
+            resolved.database = DatabaseSelection::Single(database);
         }
-        resolved.database = DatabaseSelection::Single(database);
+
+        reconcile_string(
+            "ssl_mode",
+            &mut resolved.ssl_mode,
+            parsed.ssl_mode,
+            str::eq,
+            false,
+        )?;
+        reconcile_string(
+            "ssl_ca",
+            &mut resolved.ssl_ca,
+            parsed.ssl_ca,
+            str::eq,
+            false,
+        )?;
+        reconcile_string(
+            "ssl_cert",
+            &mut resolved.ssl_cert,
+            parsed.ssl_cert,
+            str::eq,
+            false,
+        )?;
+        reconcile_string(
+            "ssl_key",
+            &mut resolved.ssl_key,
+            parsed.ssl_key,
+            str::eq,
+            false,
+        )?;
+
+        if let Some(integrated_auth) = parsed.integrated_auth {
+            if resolved.integrated_auth && !integrated_auth {
+                return Err(contradiction("integrated_auth", "true", "false", false));
+            }
+            resolved.integrated_auth = integrated_auth;
+        }
     }
 
-    reconcile_string(
-        "ssl_mode",
-        &mut resolved.ssl_mode,
-        parsed.ssl_mode,
-        str::eq,
-        false,
-    )?;
-    reconcile_string(
-        "ssl_ca",
-        &mut resolved.ssl_ca,
-        parsed.ssl_ca,
-        str::eq,
-        false,
-    )?;
-    reconcile_string(
-        "ssl_cert",
-        &mut resolved.ssl_cert,
-        parsed.ssl_cert,
-        str::eq,
-        false,
-    )?;
-    reconcile_string(
-        "ssl_key",
-        &mut resolved.ssl_key,
-        parsed.ssl_key,
-        str::eq,
-        false,
-    )?;
+    if resolved.integrated_auth
+        && (non_empty(resolved.username.clone()).is_some()
+            || non_empty(resolved.password.clone()).is_some())
+    {
+        return Err(
+            "SQL Server integrated authentication cannot be combined with a username or password"
+                .into(),
+        );
+    }
 
     Ok(resolved)
 }
@@ -255,12 +277,8 @@ impl ParsedConnectionString {
             }
             "sslkey" | "clientkey" => set_string(&mut self.ssl_key, value, "ssl_key")?,
             "integratedsecurity" | "trustedconnection" => {
-                if parse_bool(key, &value)? {
-                    return Err(
-                        "SQL Server Integrated Authentication is not supported; use User Id and Password"
-                            .into(),
-                    );
-                }
+                let integrated = parse_bool(key, &value)?;
+                set_value(&mut self.integrated_auth, integrated, "integrated_auth")?;
             }
             "authentication" => {
                 if !value.eq_ignore_ascii_case("SqlPassword")
@@ -278,6 +296,7 @@ impl ParsedConnectionString {
             | "connecttimeout"
             | "connectiontimeout"
             | "timeout"
+            | "commandtimeout"
             | "multipleactiveresultsets"
             | "marsconnection"
             | "persistsecurityinfo"
@@ -750,6 +769,85 @@ mod tests {
         let resolved = resolve_connection_params(&input).unwrap();
         assert_eq!(resolved.database.primary(), "app");
         assert_eq!(resolved.ssl_mode.as_deref(), Some("require"));
+    }
+
+    #[test]
+    fn integrated_security_sets_integrated_auth_flag() {
+        let resolved = resolve_connection_params(&params(
+            "Data Source=prod-db3.corp.isepankur.ee;Integrated Security=True;Persist Security Info=False;Pooling=False;MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=True;Application Name=\"SQL Server Management Studio\";Command Timeout=0",
+        ))
+        .unwrap();
+
+        assert_eq!(resolved.host.as_deref(), Some("prod-db3.corp.isepankur.ee"));
+        assert!(resolved.integrated_auth);
+        assert_eq!(resolved.ssl_mode.as_deref(), Some("require"));
+    }
+
+    #[test]
+    fn trusted_connection_alias_also_sets_integrated_auth() {
+        let resolved =
+            resolve_connection_params(&params("Server=localhost;Trusted_Connection=Yes")).unwrap();
+        assert!(resolved.integrated_auth);
+    }
+
+    #[test]
+    fn integrated_auth_rejects_username_and_password() {
+        for connection_string in [
+            "Server=localhost;Integrated Security=True;User Id=sa",
+            "Server=localhost;Integrated Security=True;Password=secret",
+        ] {
+            let error = resolve_connection_params(&params(connection_string)).unwrap_err();
+            assert!(error.contains("integrated authentication"), "{error}");
+        }
+    }
+
+    #[test]
+    fn extra_field_sets_integrated_auth_without_a_connection_string() {
+        let mut input = ConnectionParams {
+            host: Some("localhost".into()),
+            ..Default::default()
+        };
+        input.extra.insert("integrated_auth".into(), "true".into());
+
+        let resolved = resolve_connection_params(&input).unwrap();
+        assert!(resolved.integrated_auth);
+    }
+
+    #[test]
+    fn extra_field_integrated_auth_also_rejects_username_and_password() {
+        let mut input = ConnectionParams {
+            host: Some("localhost".into()),
+            username: Some("sa".into()),
+            ..Default::default()
+        };
+        input.extra.insert("integrated_auth".into(), "true".into());
+
+        let error = resolve_connection_params(&input).unwrap_err();
+        assert!(error.contains("integrated authentication"), "{error}");
+    }
+
+    #[test]
+    fn extra_field_and_connection_string_agreeing_on_integrated_auth_is_accepted() {
+        let mut input = ConnectionParams {
+            connection_string: Some("Server=localhost;Integrated Security=True".into()),
+            ..Default::default()
+        };
+        input.extra.insert("integrated_auth".into(), "true".into());
+
+        let resolved = resolve_connection_params(&input).unwrap();
+        assert!(resolved.integrated_auth);
+    }
+
+    #[test]
+    fn extra_field_and_connection_string_disagreeing_on_integrated_auth_is_rejected() {
+        let mut input = ConnectionParams {
+            connection_string: Some("Server=localhost;Integrated Security=False".into()),
+            ..Default::default()
+        };
+        input.extra.insert("integrated_auth".into(), "true".into());
+
+        let error = resolve_connection_params(&input).unwrap_err();
+        assert!(error.contains("integrated_auth"), "{error}");
     }
 
     #[test]

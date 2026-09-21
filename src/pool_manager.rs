@@ -21,29 +21,29 @@ type SqlServerPoolMap = Arc<RwLock<HashMap<String, SqlServerPool>>>;
 static SQLSERVER_POOLS: Lazy<SqlServerPoolMap> =
     Lazy::new(|| Arc::new(RwLock::new(HashMap::new())));
 
-/// Stable cache key for a set of connection params.
-///
-/// Prefers the host-assigned `connection_id`; falls back to
-/// host:port:user:database for ad-hoc connections. The username is essential:
-/// bastions multiplex many targets behind a single host:port and pick the
-/// backend from the username, so without it two different targets would share
-/// one pool. TLS settings are folded in so switching `ssl_mode` never reuses
-/// a pool built under a different policy.
+/// Stable cache key. Prefers `connection_id`; else host:port:database.
+/// Folds in username (bastions route by it), ssl_mode, and auth mode, so
+/// none of those can silently reuse a pool built under different ones.
+/// Gap: password isn't in the key, so rotating it still reuses the pool.
 fn build_connection_key(params: &ConnectionParams) -> String {
     let ssl_mode = params.ssl_mode.as_deref().unwrap_or("prefer");
+    let auth = if params.integrated_auth {
+        "integrated".to_string()
+    } else {
+        format!("sql:{}", params.username.as_deref().unwrap_or(""))
+    };
     let base_key = if let Some(conn_id) = params.connection_id.as_deref() {
         format!("{}:conn:{}:{}", params.driver, conn_id, params.database)
     } else {
         format!(
-            "{}:{}:{}:{}:{}",
+            "{}:{}:{}:{}",
             params.driver,
             params.host.as_deref().unwrap_or("localhost"),
             params.port.unwrap_or(1433),
-            params.username.as_deref().unwrap_or(""),
             params.database
         )
     };
-    format!("{base_key}:ssl:{ssl_mode}")
+    format!("{base_key}:auth:{auth}:ssl:{ssl_mode}")
 }
 
 fn startup_script(params: &ConnectionParams) -> Option<String> {
@@ -154,7 +154,24 @@ mod tests {
         let mut p = params(None);
         p.ssl_mode = Some("require".into());
         let key = build_connection_key(&p);
-        assert_eq!(key, "sqlserver:localhost:1433:sa:master:ssl:require");
+        assert_eq!(
+            key,
+            "sqlserver:localhost:1433:master:auth:sql:sa:ssl:require"
+        );
+    }
+
+    #[test]
+    fn integrated_auth_is_part_of_the_key_even_with_a_shared_connection_id() {
+        let sql_auth = params(Some("ss045-key"));
+        let mut integrated = sql_auth.clone();
+        integrated.username = None;
+        integrated.integrated_auth = true;
+
+        assert_ne!(
+            build_connection_key(&sql_auth),
+            build_connection_key(&integrated),
+            "editing a saved connection between SQL and Windows auth must not reuse a stale pool"
+        );
     }
 
     #[test]
