@@ -251,12 +251,13 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm build
 
+      # Authenticates through npm Trusted Publishing (OIDC, `id-token: write`
+      # above) configured on npmjs.com for this repository and release.yml;
+      # no npm token secret is involved.
       - name: Publish
         if: steps.npm.outputs.published == 'false'
         working-directory: explain
         run: pnpm publish --access public --provenance --no-git-checks
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
   release:
     name: Publish GitHub release
