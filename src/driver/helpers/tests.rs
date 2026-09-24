@@ -436,6 +436,52 @@ fn affected_rows_are_only_reported_for_final_dml_statement() {
 }
 
 #[test]
+fn classifier_preserves_explicit_outer_row_limits() {
+    for query in [
+        "SELECT TOP 100 * FROM users",
+        "select top(100) * from users;",
+        "SELECT DISTINCT TOP (10) id FROM users",
+        "SELECT ALL TOP (@count) id FROM users",
+        "SELECT TOP (10) PERCENT WITH TIES id FROM users ORDER BY id",
+        "SELECT /* limit */ TOP /* count */ (100) * FROM users",
+        ";WITH source AS (SELECT id FROM users) SELECT TOP (2) id FROM source",
+        "SELECT id FROM users ORDER BY id OFFSET 10 ROWS",
+        "SELECT id FROM users ORDER BY id OFFSET (10) ROW FETCH NEXT (5) ROWS ONLY",
+        "SELECT id FROM users ORDER BY id OFFSET @skip ROWS FETCH FIRST @take ROW ONLY",
+        "SELECT id FROM users ORDER BY id OFFSET (SELECT 10) ROWS",
+        "WITH source AS (SELECT id FROM users) SELECT id FROM source ORDER BY id OFFSET 0 ROWS FETCH NEXT 10 ROWS ONLY; -- done",
+        "SELECT id FROM users ORDER BY id OFFSET /* skip */ 0 ROWS /* take */ FETCH NEXT 10 ROWS ONLY",
+        "SELECT TOP (1) id FROM users UNION ALL SELECT id FROM admins",
+    ] {
+        assert!(query_returns_result_set(query), "lost result set: {query}");
+        assert!(!query_can_be_paginated(query), "paginated: {query}");
+        assert!(!query_reports_affected_rows(query), "lost SELECT: {query}");
+    }
+}
+
+#[test]
+fn classifier_still_paginates_when_row_limits_are_only_nested_or_masked() {
+    for query in [
+        "SELECT * FROM (SELECT TOP (5) * FROM users ORDER BY id) AS recent",
+        "WITH recent AS (SELECT TOP (5) id FROM users) SELECT id FROM recent",
+        "WITH recent AS (SELECT id FROM users ORDER BY id OFFSET 0 ROWS FETCH NEXT 5 ROWS ONLY) SELECT id FROM recent",
+        "SELECT (SELECT TOP (1) id FROM users) AS first_id",
+        "SELECT * FROM (SELECT id FROM users ORDER BY id OFFSET 0 ROWS) AS recent",
+        "SELECT 'TOP (100) OFFSET 0 ROWS FETCH NEXT 5 ROWS ONLY' AS label",
+        "SELECT [TOP], [OFFSET], [FETCH] FROM [users]",
+        "SELECT \"TOP\", \"OFFSET\", \"FETCH\" FROM users",
+        "SELECT id FROM users -- TOP (100) OFFSET 0 ROWS FETCH NEXT 5 ROWS ONLY",
+        "SELECT id FROM users /* TOP (100) OFFSET 0 ROWS FETCH NEXT 5 ROWS ONLY */",
+        "SELECT id /* outer /* nested */ TOP (100) */ FROM users",
+        "SELECT @top, @offset, @fetch FROM users",
+        "SELECT offset FROM users ORDER BY offset",
+    ] {
+        assert!(query_returns_result_set(query), "lost result set: {query}");
+        assert!(query_can_be_paginated(query), "not paginated: {query}");
+    }
+}
+
+#[test]
 fn paginated_query_adds_order_when_missing() {
     assert_eq!(
         build_paginated_query("SELECT * FROM [users];", 25, 2),
