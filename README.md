@@ -55,6 +55,7 @@ This plugin enables Tabularis to connect to SQL Server instances, providing sche
 - Microsoft's `mssql-tds` protocol implementation through `mssql-tiberius-bridge`, with `deadpool` connection pooling, session reset (`sp_reset_connection`), startup scripts, and pool lifecycle handling
 - Schema, table, column, PK/FK, index, view, routine, and trigger introspection
 - Query execution with pagination, CTE/DML classification, multiple result sets, and session-preserving batches
+- Driver-owned SELECT/UPDATE/DELETE previews on hosts supporting optional [SQL templates](docs/query-templates.md), including SQL Server `TOP` syntax
 - Accurate affected rows, including multi-statement DML and DML `OUTPUT`
 - INSERT/UPDATE/DELETE with composite primary keys and safe `IDENTITY_INSERT` recovery
 - Table/view/index/foreign-key DDL and safe `ALTER COLUMN` generation

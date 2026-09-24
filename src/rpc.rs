@@ -5,7 +5,9 @@ use serde_json::{json, Value};
 
 use crate::connection::resolve_connection_params;
 use crate::driver::error::redact_connection_secrets;
-use crate::handlers::{blob, crud, ddl, metadata, query, routines, triggers, users, views};
+use crate::handlers::{
+    blob, crud, ddl, metadata, query, query_templates, routines, triggers, users, views,
+};
 use crate::models::ConnectionParams;
 use crate::{pool_manager, settings};
 
@@ -125,6 +127,9 @@ pub async fn handle_line(line: &str) -> Value {
         "save_blob_to_file" => blob::save_blob_to_file(id, &params).await,
         "fetch_blob_as_data_url" => blob::fetch_blob_as_data_url(id, &params).await,
 
+        // Optional query previews (no SQL execution).
+        "get_table_query_template" => query_templates::get_table_query_template(id, &params),
+
         // DDL.
         "get_create_table_sql" => ddl::get_create_table_sql(id, &params).await,
         "get_add_column_sql" => ddl::get_add_column_sql(id, &params).await,
@@ -227,7 +232,8 @@ mod tests {
 
     /// Snapshot extracted from every literal `PluginProcess::call` and
     /// `call_with_timeout` in Tabularis
-    /// `src-tauri/src/plugins/driver.rs` at core commit 9e6975aa.
+    /// `src-tauri/src/plugins/driver.rs` at core commit 9e6975aa,
+    /// plus the optional get_table_query_template extension for issue #26.
     const HOST_METHODS: &[&str] = &[
         "initialize",
         "ping",
@@ -263,6 +269,7 @@ mod tests {
         "delete_record",
         "save_blob_to_file",
         "fetch_blob_as_data_url",
+        "get_table_query_template",
         "get_create_table_sql",
         "get_add_column_sql",
         "get_alter_column_sql",

@@ -360,6 +360,17 @@ def main() -> None:
             ),
         )
 
+        capture(
+            "get_table_query_template",
+            rpc_params(request={
+                "schema": SCHEMA,
+                "table": "generated_table",
+                "kind": "select",
+                "columns": ["id", "value"],
+                "limit": 100,
+            }),
+        )
+
         column = {
             "name": "value",
             "data_type": "NVARCHAR(40)",
@@ -481,6 +492,7 @@ def main() -> None:
             "delete_record",
             "save_blob_to_file",
             "fetch_blob_as_data_url",
+            "get_table_query_template",
             "get_create_table_sql",
             "get_add_column_sql",
             "get_alter_column_sql",

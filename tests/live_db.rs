@@ -1372,6 +1372,32 @@ fn explicit_row_limits_bypass_host_pagination_in_single_and_batch_queries() {
 }
 
 #[test]
+fn generated_select_template_executes_without_conflicting_host_pagination() {
+    let mut plugin = Plugin::with_scratch_database();
+    plugin.reset_table("query_templates", "id INT PRIMARY KEY, label NVARCHAR(30)");
+    plugin.execute(format!(
+        "INSERT INTO [{TEST_SCHEMA}].[query_templates] VALUES (1, N'one'), (2, N'two'), (3, N'three')"
+    ));
+    let template = plugin.call_ok(
+        "get_table_query_template",
+        json!({
+            "params": connection_params(),
+            "request": { "table": "query_templates", "schema": TEST_SCHEMA,
+                         "kind": "select", "columns": ["id", "label"], "limit": 2 }
+        }),
+    );
+    assert!(template.as_str().unwrap().starts_with("SELECT TOP (2)"));
+    let result = plugin.call_ok(
+        "execute_query",
+        json!({ "params": connection_params(), "query": template, "limit": 1, "page": 4 }),
+    );
+    assert_eq!(result["columns"], json!(["id", "label"]));
+    assert_eq!(result_rows(&result).len(), 2);
+    assert_eq!(result["pagination"], Value::Null);
+    assert_eq!(result["truncated"], false);
+}
+
+#[test]
 fn million_row_query_is_bounded_and_marks_truncation() {
     let mut plugin = Plugin::with_scratch_database();
     let result = plugin.execute(
