@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Opt-in `get_table_query_template` RPC for driver-owned SELECT, UPDATE and
+  DELETE previews, with SQL Server `TOP`, schema qualification and identifier
+  quoting (#26). Older hosts keep their existing generation path; no minimum
+  runtime version increase is required for this optional extension.
+
 ### Fixed
 
 - Preserve explicit outer `TOP` and `OFFSET/FETCH` limits instead of adding
