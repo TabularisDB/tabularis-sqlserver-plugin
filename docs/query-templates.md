@@ -40,6 +40,11 @@ FROM [sales].[orders];
   include `WHERE 1 = 0` so the preview cannot accidentally modify all rows.
 - This method does not open a database connection or execute SQL.
 
+## Local end-to-end verification
+
+See [query-templates-e2e.md](query-templates-e2e.md) for the joint host/plugin
+setup, automated results, disposable SQL fixture and desktop acceptance checklist.
+
 ## Compatibility and rollout
 
 1. Merge the pagination fix in [PR #30](https://github.com/TabularisDB/tabularis-sqlserver-plugin/pull/30).

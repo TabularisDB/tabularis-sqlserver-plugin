@@ -1398,6 +1398,55 @@ fn generated_select_template_executes_without_conflicting_host_pagination() {
 }
 
 #[test]
+fn generated_templates_escape_identifiers_and_guard_writes() {
+    let mut plugin = Plugin::with_scratch_database();
+    let table = "query]template_guards";
+    let target = format!("[{TEST_SCHEMA}].{}", bracket_quote(table));
+    plugin.execute(format!(
+        "DROP TABLE IF EXISTS {target}; \
+         CREATE TABLE {target} (id INT PRIMARY KEY, [a b] INT, [a-b] INT, [order]]status] NVARCHAR(30)); \
+         INSERT INTO {target} VALUES (1, 2, 3, N'open')"
+    ));
+    let baseline = plugin.execute(format!("SELECT * FROM {target} ORDER BY id"));
+
+    let mut templates = Vec::new();
+    for kind in ["select", "update", "delete"] {
+        let template = plugin.call_ok(
+            "get_table_query_template",
+            json!({
+                "params": connection_params(),
+                "request": { "table": table, "schema": TEST_SCHEMA, "kind": kind,
+                             "columns": ["id", "a b", "a-b", "order]status"] }
+            }),
+        );
+        let sql = template.as_str().unwrap().to_string();
+        assert!(sql.contains(&target));
+        templates.push(sql);
+    }
+    // Generating previews must not execute them or change the table.
+    let after_preview = plugin.execute(format!("SELECT * FROM {target} ORDER BY id"));
+    assert_eq!(after_preview["rows"], baseline["rows"]);
+    let selected = plugin.execute(&templates[0]);
+    assert_eq!(selected["rows"], baseline["rows"]);
+    assert_eq!(selected["columns"], baseline["columns"]);
+
+    assert_eq!(templates[1].matches(":value_").count(), 4);
+    // Simulate the editor filling its named placeholders with SQL literals.
+    let update = templates[1]
+        .replace(":value_1", "999")
+        .replace(":value_2", "20")
+        .replace(":value_3", "30")
+        .replace(":value_4", "N'closed'");
+    for sql in [update, templates[2].clone()] {
+        assert!(sql.ends_with("WHERE 1 = 0;"));
+        let result = plugin.execute(sql);
+        assert_eq!(result["affected_rows"], 0);
+    }
+    let after_writes = plugin.execute(format!("SELECT * FROM {target} ORDER BY id"));
+    assert_eq!(after_writes["rows"], baseline["rows"]);
+}
+
+#[test]
 fn million_row_query_is_bounded_and_marks_truncation() {
     let mut plugin = Plugin::with_scratch_database();
     let result = plugin.execute(
