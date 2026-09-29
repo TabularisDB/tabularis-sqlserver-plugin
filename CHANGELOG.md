@@ -7,12 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-beta.3] - 2026-09-29
+
 ### Added
 
 - Opt-in `get_table_query_template` RPC for driver-owned SELECT, UPDATE and
   DELETE previews, with SQL Server `TOP`, schema qualification and identifier
-  quoting (#26). Older hosts keep their existing generation path; no minimum
-  runtime version increase is required for this optional extension.
+  quoting (#26).
+- Live SQL Server regression coverage and a reusable desktop fixture for
+  escaped identifiers, unique UPDATE placeholders and guarded writes.
+
+### Changed
+
+- Require Tabularis `0.25.1-5` or newer so this release's Generate SQL fix is
+  paired with the host extension from Tabularis PR #818. The optional RPC is
+  backward-compatible, but this release intentionally gates installation on
+  a host that implements the complete fix.
 
 ### Fixed
 
@@ -113,6 +123,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   regression coverage for pool identity, million-row truncation and concurrent
   responsiveness.
 
-[Unreleased]: https://github.com/TabularisDB/tabularis-sqlserver-plugin/compare/v1.0.0-beta.2...HEAD
+[Unreleased]: https://github.com/TabularisDB/tabularis-sqlserver-plugin/compare/v1.0.0-beta.3...HEAD
+[1.0.0-beta.3]: https://github.com/TabularisDB/tabularis-sqlserver-plugin/compare/v1.0.0-beta.2...v1.0.0-beta.3
 [1.0.0-beta.2]: https://github.com/TabularisDB/tabularis-sqlserver-plugin/compare/v1.0.0-beta.1...v1.0.0-beta.2
 [1.0.0-beta.1]: https://github.com/TabularisDB/tabularis-sqlserver-plugin/releases/tag/v1.0.0-beta.1

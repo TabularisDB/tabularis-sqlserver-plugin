@@ -2,7 +2,9 @@
 
 The plugin advertises `capabilities.table_query_templates: true` and implements
 `get_table_query_template` for compatible Tabularis hosts. The request and result
-are additive: existing RPC methods and the minimum runtime version are unchanged.
+are additive and existing RPC methods are unchanged. Plugin v1.0.0-beta.3
+requires Tabularis `0.25.1-5` or newer as a distribution policy, pairing the
+plugin with the first targeted host nightly containing PR #818.
 
 ```json
 {
@@ -43,7 +45,7 @@ FROM [sales].[orders];
 ## Local end-to-end verification
 
 See [query-templates-e2e.md](query-templates-e2e.md) for the joint host/plugin
-setup, automated results, disposable SQL fixture and desktop acceptance checklist.
+setup, automated checks, disposable SQL fixture and desktop acceptance checklist.
 
 ## Compatibility and rollout
 
@@ -53,8 +55,9 @@ setup, automated results, disposable SQL fixture and desktop acceptance checklis
    retain legacy generation. Only a remote `-32601` selects the legacy fallback;
    real errors and malformed results are surfaced.
 4. Release this plugin's template support. The full issue #26 fix requires both
-   the host extension and the plugin pagination fix. Older hosts continue working,
-   but their Generate SQL dialog still uses the old generation logic.
+   the host extension and the plugin pagination fix. The extension itself remains
+   optional, but this plugin release raises the installation floor so users get
+   both halves of the fix. Older hosts can continue using v1.0.0-beta.2.
 
 CREATE TABLE inspection remains unchanged in this extension. It is separate from
 these query templates and from the existing DDL RPC contract.
@@ -84,4 +87,5 @@ plugin release; if it was already ingested, refresh its manifest afterward.
 
 This is a registry administrator's schema/configuration update, not a backend or
 SDK protocol change. No database migration, new API endpoint, historical release
-archive rewrite or minimum-host-version increase is needed.
+archive rewrite is needed. The schema registration itself does not require a
+minimum-host-version increase; the release's host floor is a separate policy.
