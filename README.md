@@ -18,14 +18,12 @@ A [Microsoft SQL Server](https://www.microsoft.com/sql-server) plugin for [Tabul
 
 This plugin enables Tabularis to connect to SQL Server instances, providing schema introspection, query execution, full CRUD, DDL, trigger and stored-routine management, BLOB handling, database-user management, and visual execution plans through a JSON-RPC 2.0 over stdio interface. It is written in Rust on top of Microsoft's [`mssql-tds`](https://github.com/microsoft/mssql-rust) protocol implementation (via [`mssql-tiberius-bridge`](https://crates.io/crates/mssql-tiberius-bridge)) with [`deadpool`](https://crates.io/crates/deadpool) connection pooling.
 
-> **Requires Tabularis v0.24.1-2 or later.** This plugin relies on raw plugin
-> EXPLAIN output and plugin-provided parser bundle loading (v0.23.0) plus the
-> connection-modal credential-hiding hook from
-> [TabularisDB/tabularis#780](https://github.com/TabularisDB/tabularis/pull/780),
-> first shipped in nightly
-> [nightly-20260918-992d969](https://github.com/TabularisDB/tabularis/releases/tag/nightly-20260918-992d969)
-> (app version `0.24.1-2`). Do not publish this candidate before a compatible
-> host is available.
+> **Requires Tabularis v0.25.1-5 or later.** Plugin v1.0.0-beta.3 pairs native
+> SQL Server Generate SQL previews with the host extension from
+> [TabularisDB/tabularis#818](https://github.com/TabularisDB/tabularis/pull/818).
+> Update both the app and the plugin to get the complete TOP/LIMIT fix.
+> The target host is nightly `0.25.1-5` or the following stable release;
+> earlier hosts should remain on plugin v1.0.0-beta.2.
 
 **Discord** — [Join our Discord server](https://discord.com/invite/K2hmhfHRSt) and chat with the maintainers.
 

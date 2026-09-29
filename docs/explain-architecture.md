@@ -18,6 +18,9 @@ isolated desktop loader. This repository contains the TypeScript parser, ESM
 package, IIFE and raw Rust handoff. The EXPLAIN contract requires Tabularis
 0.23.0; plugin v1.0.0-beta.2 raises `.tabularium`'s overall runtime floor to
 0.24.1-2 for the integrated-authentication UI and credential lifecycle.
+Plugin v1.0.0-beta.3 raises the overall floor again to 0.25.1-5 to pair the
+Generate SQL fix with the optional host template RPC; the EXPLAIN contract is
+unchanged.
 The standalone site integration is in
 [TabularisDB/explain-plan#2](https://github.com/TabularisDB/explain-plan/pull/2).
 
