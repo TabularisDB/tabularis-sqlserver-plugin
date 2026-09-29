@@ -1,0 +1,5 @@
+{
+  "id": 1,
+  "jsonrpc": "2.0",
+  "result": "SELECT TOP (100)\n  [id],\n  [value]\nFROM [ss044].[generated_table];"
+}

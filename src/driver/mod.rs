@@ -13,6 +13,7 @@ pub mod helpers;
 pub mod introspection;
 pub mod ops;
 pub mod pool;
+pub mod query_templates;
 pub mod routines;
 pub mod triggers;
 pub mod types;

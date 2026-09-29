@@ -315,6 +315,7 @@ fn every_recorded_result_deserializes_into_the_host_target() {
     assert_deserializes::<String>(
         &[
             "get_view_definition",
+            "get_table_query_template",
             "get_routine_definition",
             "build_routine_call_sql",
             "routine_create_template",

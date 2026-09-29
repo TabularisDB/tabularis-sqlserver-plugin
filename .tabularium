@@ -76,6 +76,7 @@
     "views": true,
     "routines": true,
     "routine_management": true,
+    "table_query_templates": true,
     "triggers": true,
     "user_management": true,
     "file_based": false,
