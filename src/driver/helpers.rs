@@ -348,6 +348,8 @@ pub fn query_returns_result_set(query: &str) -> bool {
         .any(|statement| statement_returns_result_set(statement))
 }
 
+/// Only add host pagination to a single result-bearing statement without an
+/// explicit outer row limit. Inner TOP/OFFSET clauses do not limit its result.
 pub fn query_can_be_paginated(query: &str) -> bool {
     let statements = top_level_statements(&code_mask(query));
     statements.len() == 1 && statement_can_be_paginated(&statements[0])
@@ -390,7 +392,10 @@ pub fn build_paginated_query(query: &str, page_size: u32, page: u32) -> String {
 fn statement_can_be_paginated(statement: &str) -> bool {
     let words = top_level_words(statement);
     statement_operation(&words).is_some_and(|(operation_index, operation)| match operation {
-        "SELECT" => !select_has_top_level_into(&words, operation_index),
+        "SELECT" => {
+            !select_has_top_level_into(&words, operation_index)
+                && !select_has_top_level_row_limit(&words, operation_index)
+        }
         "VALUES" => true,
         _ => false,
     })
@@ -434,6 +439,32 @@ fn select_has_top_level_into(words: &[String], operation_index: usize) -> bool {
         .any(|word| word == "INTO")
 }
 
+fn select_has_top_level_row_limit(words: &[String], operation_index: usize) -> bool {
+    let words = &words[operation_index + 1..];
+    // TOP is reserved; quoted identifiers, literals, comments and nested
+    // scopes have already been removed. Also preserve TOP in set operands.
+    if words.iter().any(|word| word == "TOP") {
+        return true;
+    }
+
+    // OFFSET is not reserved, so merely selecting a column named `offset`
+    // must not disable pagination. A paging clause follows ORDER BY and
+    // terminates its count with ROW/ROWS (FETCH is optional).
+    let Some(order_index) = words
+        .windows(2)
+        .position(|pair| pair[0] == "ORDER" && pair[1] == "BY")
+    else {
+        return false;
+    };
+    let order_words = &words[order_index + 2..];
+    order_words.iter().enumerate().any(|(index, word)| {
+        word == "OFFSET"
+            && order_words[index + 1..]
+                .iter()
+                .any(|word| matches!(word.as_str(), "ROW" | "ROWS"))
+    })
+}
+
 fn top_level_words(statement: &str) -> Vec<String> {
     let mut words = Vec::new();
     let mut current = String::new();
@@ -450,7 +481,9 @@ fn top_level_words(statement: &str) -> Vec<String> {
                 depth = depth.saturating_sub(1);
                 current.clear();
             }
-            _ if depth == 0 && (character.is_alphanumeric() || character == '_') => {
+            _ if depth == 0
+                && (character.is_alphanumeric() || matches!(character, '_' | '@' | '#' | '$')) =>
+            {
                 current.push(character.to_ascii_uppercase());
             }
             _ if depth == 0 && !current.is_empty() => {
@@ -501,6 +534,7 @@ fn code_mask(query: &str) -> String {
     let characters: Vec<char> = query.chars().collect();
     let mut masked = String::with_capacity(query.len());
     let mut state = State::Normal;
+    let mut block_depth = 0_u32;
     let mut position = 0;
     while position < characters.len() {
         let character = characters[position];
@@ -526,6 +560,7 @@ fn code_mask(query: &str) -> String {
                 }
                 ('/', Some('*')) => {
                     state = State::BlockComment;
+                    block_depth = 1;
                     masked.push_str("  ");
                     position += 1;
                 }
@@ -562,9 +597,17 @@ fn code_mask(query: &str) -> String {
                 masked.push(character);
                 state = State::Normal;
             }
+            State::BlockComment if character == '/' && next == Some('*') => {
+                masked.push_str("  ");
+                block_depth += 1;
+                position += 1;
+            }
             State::BlockComment if character == '*' && next == Some('/') => {
                 masked.push_str("  ");
-                state = State::Normal;
+                block_depth -= 1;
+                if block_depth == 0 {
+                    state = State::Normal;
+                }
                 position += 1;
             }
             _ => masked.push(' '),

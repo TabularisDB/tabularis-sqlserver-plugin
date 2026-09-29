@@ -1315,6 +1315,63 @@ fn pagination_and_batch_semantics_cover_ordered_unordered_cte_and_dml() {
 }
 
 #[test]
+fn explicit_row_limits_bypass_host_pagination_in_single_and_batch_queries() {
+    let mut plugin = Plugin::with_scratch_database();
+    let source = "(VALUES (1), (2), (3), (4), (5)) AS source(id)";
+    let cases = [
+        (
+            format!("SELECT TOP 3 id FROM {source} ORDER BY id"),
+            json!([[1], [2], [3]]),
+        ),
+        (
+            format!("SELECT DISTINCT TOP (3) id FROM {source} ORDER BY id; -- keep limit"),
+            json!([[1], [2], [3]]),
+        ),
+        (
+            format!("SELECT TOP (60) PERCENT id FROM {source} ORDER BY id"),
+            json!([[1], [2], [3]]),
+        ),
+        (
+            format!("SELECT TOP (3) WITH TIES id FROM {source} ORDER BY id"),
+            json!([[1], [2], [3]]),
+        ),
+        (
+            format!("WITH cte AS (SELECT id FROM {source}) SELECT TOP (3) id FROM cte ORDER BY id"),
+            json!([[1], [2], [3]]),
+        ),
+        (
+            format!("SELECT id FROM {source} ORDER BY id OFFSET 2 ROWS"),
+            json!([[3], [4], [5]]),
+        ),
+        (
+            format!("SELECT id FROM {source} ORDER BY id OFFSET 1 ROWS FETCH NEXT 3 ROWS ONLY"),
+            json!([[2], [3], [4]]),
+        ),
+    ];
+
+    for (query, expected_rows) in &cases {
+        let result = plugin.call_ok(
+            "execute_query",
+            json!({ "params": connection_params(), "query": query, "limit": 1, "page": 2 }),
+        );
+        assert_eq!(result["rows"], *expected_rows, "{query}");
+        assert_eq!(result["pagination"], Value::Null, "{query}");
+        assert_eq!(result["truncated"], false, "{query}");
+    }
+
+    let queries: Vec<_> = cases.iter().map(|(query, _)| query).collect();
+    let batch = plugin.call_ok(
+        "execute_query_batch",
+        json!({ "params": connection_params(), "queries": queries, "limit": 1, "page": 2 }),
+    );
+    for (index, (query, expected_rows)) in cases.iter().enumerate() {
+        assert_eq!(batch[index]["result"]["rows"], *expected_rows, "{query}");
+        assert_eq!(batch[index]["result"]["pagination"], Value::Null, "{query}");
+        assert_eq!(batch[index]["result"]["truncated"], false, "{query}");
+    }
+}
+
+#[test]
 fn million_row_query_is_bounded_and_marks_truncation() {
     let mut plugin = Plugin::with_scratch_database();
     let result = plugin.execute(

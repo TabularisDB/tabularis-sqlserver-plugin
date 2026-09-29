@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Preserve explicit outer `TOP` and `OFFSET/FETCH` limits instead of adding
+  incompatible automatic pagination (#26). Limits inside CTEs and subqueries
+  still allow pagination of the outer query.
+
 ## [1.0.0-beta.2] - 2026-09-21
 
 ### Added
