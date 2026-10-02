@@ -20,7 +20,7 @@ use std::collections::HashMap;
 pub const Q_GET_TABLES: &str = "\
 SELECT \
     t.name, \
-    TRY_CONVERT(nvarchar(max), ep.value) AS comment \
+    CONVERT(nvarchar(max), ep.value) AS comment \
 FROM sys.tables t \
 JOIN sys.schemas s ON t.schema_id = s.schema_id \
 LEFT JOIN sys.extended_properties ep \
@@ -57,7 +57,7 @@ SELECT \
           AND i.is_primary_key = 1 \
     ), 0) AS BIT) AS is_pk, \
     dc.definition AS default_value, \
-    TRY_CONVERT(nvarchar(max), ep.value) AS comment \
+    CONVERT(nvarchar(max), ep.value) AS comment \
 FROM sys.columns c \
 JOIN sys.types ty ON c.user_type_id = ty.user_type_id \
 LEFT JOIN sys.default_constraints dc \
@@ -218,7 +218,7 @@ SELECT \
           AND i.is_primary_key = 1 \
     ), 0) AS BIT) AS is_pk, \
     dc.definition AS default_value, \
-    TRY_CONVERT(nvarchar(max), ep.value) AS comment \
+    CONVERT(nvarchar(max), ep.value) AS comment \
 FROM sys.columns c \
 JOIN sys.tables t ON c.object_id = t.object_id \
 JOIN sys.schemas s ON t.schema_id = s.schema_id \

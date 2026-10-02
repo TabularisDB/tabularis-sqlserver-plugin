@@ -11,3 +11,8 @@ fn drop_trigger_uses_schema_qualified_identifier() {
         "DROP TRIGGER [dbo].[audit_orders]"
     );
 }
+
+#[test]
+fn list_triggers_xml_value_uses_non_unicode_literals() {
+    assert!(LIST_TRIGGERS.contains(".value('.', 'nvarchar(max)')"));
+}

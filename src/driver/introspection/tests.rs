@@ -11,7 +11,7 @@ fn q_get_tables_queries_descriptions_with_object_scope() {
     assert!(Q_GET_TABLES.contains("ep.major_id = t.object_id"));
     assert!(Q_GET_TABLES.contains("ep.minor_id = 0"));
     assert!(Q_GET_TABLES.contains("ep.name = N'MS_Description'"));
-    assert!(Q_GET_TABLES.contains("TRY_CONVERT(nvarchar(max), ep.value) AS comment"));
+    assert!(Q_GET_TABLES.contains("CONVERT(nvarchar(max), ep.value) AS comment"));
     assert!(Q_GET_TABLES.contains("@P1"));
     assert!(Q_GET_TABLES.contains("ORDER BY t.name"));
 }
@@ -29,7 +29,7 @@ fn q_get_columns_joins_sys_types_and_reports_pk() {
     assert!(Q_GET_COLUMNS.contains("ep.major_id = c.object_id"));
     assert!(Q_GET_COLUMNS.contains("ep.minor_id = c.column_id"));
     assert!(Q_GET_COLUMNS.contains("ep.name = N'MS_Description'"));
-    assert!(Q_GET_COLUMNS.contains("TRY_CONVERT(nvarchar(max), ep.value) AS comment"));
+    assert!(Q_GET_COLUMNS.contains("CONVERT(nvarchar(max), ep.value) AS comment"));
     assert!(Q_GET_COLUMNS.contains("c.is_computed AS is_generated"));
     assert!(Q_GET_COLUMNS.contains("OBJECT_ID(@P1)"));
     assert!(Q_GET_COLUMNS.contains("ORDER BY c.column_id"));
@@ -167,7 +167,7 @@ fn q_get_all_columns_batch_groups_by_table() {
     assert!(Q_GET_ALL_COLUMNS_BATCH.contains("ep.major_id = c.object_id"));
     assert!(Q_GET_ALL_COLUMNS_BATCH.contains("ep.minor_id = c.column_id"));
     assert!(Q_GET_ALL_COLUMNS_BATCH.contains("ep.name = N'MS_Description'"));
-    assert!(Q_GET_ALL_COLUMNS_BATCH.contains("TRY_CONVERT(nvarchar(max), ep.value) AS comment"));
+    assert!(Q_GET_ALL_COLUMNS_BATCH.contains("CONVERT(nvarchar(max), ep.value) AS comment"));
     assert!(Q_GET_ALL_COLUMNS_BATCH.contains("@P1"));
     assert!(Q_GET_ALL_COLUMNS_BATCH.contains("ORDER BY t.name, c.column_id"));
     // Must emit the table name so the caller can group rows.
