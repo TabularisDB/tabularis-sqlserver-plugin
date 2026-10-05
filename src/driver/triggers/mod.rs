@@ -10,7 +10,7 @@ SELECT tr.[name], tb.[name],
            WHERE te.[object_id] = tr.[object_id]
            ORDER BY te.[type_desc]
            FOR XML PATH(N''), TYPE
-       ).value(N'.', N'nvarchar(max)'), 1, 4, N''),
+       ).value('.', 'nvarchar(max)'), 1, 4, N''),
        CASE WHEN tr.[is_instead_of_trigger] = 1 THEN N'INSTEAD OF' ELSE N'AFTER' END,
        sm.[definition]
 FROM sys.triggers tr

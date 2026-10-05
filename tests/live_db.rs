@@ -1117,6 +1117,61 @@ fn zero_row_select_preserves_column_headers() {
 }
 
 #[test]
+fn get_triggers_lists_events_and_timing() {
+    let mut plugin = Plugin::with_scratch_database();
+    plugin.reset_table("trigger_target", "id INT NOT NULL PRIMARY KEY");
+    plugin.execute(format!(
+        "EXEC(N'CREATE TRIGGER [{TEST_SCHEMA}].[trg_target_audit] ON [{TEST_SCHEMA}].[trigger_target] \
+         AFTER INSERT, UPDATE AS SET NOCOUNT ON')"
+    ));
+
+    let triggers = plugin.call_ok(
+        "get_triggers",
+        json!({ "params": connection_params(), "schema": TEST_SCHEMA }),
+    );
+    let trigger = triggers
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["name"] == "trg_target_audit")
+        .expect("trigger listed");
+    assert_eq!(trigger["table_name"], "trigger_target");
+    assert_eq!(trigger["event"], "INSERT OR UPDATE");
+    assert_eq!(trigger["timing"], "AFTER");
+
+    plugin.execute(format!("DROP TABLE [{TEST_SCHEMA}].[trigger_target]"));
+}
+
+#[test]
+fn metadata_introspection_works_at_compatibility_level_100() {
+    let mut plugin = Plugin::spawn();
+    let master = connection_params_for("master", "ss003-master");
+    plugin.execute_with(
+        &master,
+        "IF DB_ID(N'tabularis_compat100') IS NULL EXEC(N'CREATE DATABASE [tabularis_compat100]'); \
+         ALTER DATABASE [tabularis_compat100] SET COMPATIBILITY_LEVEL = 100",
+    );
+    let params = connection_params_for("tabularis_compat100", "ss003-compat100");
+    plugin.execute_with(
+        &params,
+        "DROP TABLE IF EXISTS dbo.legacy; CREATE TABLE dbo.legacy (id INT NOT NULL PRIMARY KEY)",
+    );
+
+    for (method, extra) in [
+        ("get_tables", json!({})),
+        ("get_columns", json!({ "table": "legacy" })),
+        ("get_all_columns_batch", json!({})),
+    ] {
+        let mut request = json!({ "params": params, "schema": "dbo" });
+        request
+            .as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
+        plugin.call_ok(method, request);
+    }
+}
+
+#[test]
 fn multi_statement_and_batch_rpc_preserve_result_sets_and_temp_table_session() {
     let mut plugin = Plugin::with_scratch_database();
     let multi = plugin.execute(
