@@ -20,7 +20,8 @@ pub fn format_bridge_error(error: &BridgeError, ssl_mode: Option<&str>) -> Strin
         }
         BridgeError::ColumnNotFound(_)
         | BridgeError::ColumnIndexOutOfBounds { .. }
-        | BridgeError::Conversion(_) => format!("SQL Server data conversion failure: {error}"),
+        | BridgeError::Conversion(_)
+        | BridgeError::BulkInput(_) => format!("SQL Server data conversion failure: {error}"),
         BridgeError::Pool(message) => format!("SQL Server connection-pool failure: {message}"),
         BridgeError::InvalidPreparedStatement => {
             format!("SQL Server driver failure: {error}")
@@ -247,6 +248,17 @@ mod tests {
         assert!(!bridge_error_requires_discard(
             &BridgeError::InvalidPreparedStatement
         ));
+    }
+
+    #[test]
+    fn bulk_input_failure_preserves_details_without_discarding_connection() {
+        let error = BridgeError::BulkInput("wrong column count".into());
+
+        assert_eq!(
+            format_bridge_error(&error, None),
+            "SQL Server data conversion failure: BULK UPLOAD input failure: wrong column count"
+        );
+        assert!(!bridge_error_requires_discard(&error));
     }
 
     #[test]
