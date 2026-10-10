@@ -1608,6 +1608,69 @@ fn syntax_and_constraint_errors_keep_server_details_and_pool_recovery() {
     assert_eq!(after_constraint["rows"], json!([[1]]));
 }
 
+// Issue #37: a runtime error followed by a result set in the same batch used to
+// surface as "Expected ColumnMetadata in context" (or hang) instead of the
+// server error. insert_record/update_record always hit this shape because they
+// append `SELECT @@ROWCOUNT` after the DML.
+#[test]
+fn runtime_error_followed_by_result_set_returns_server_error() {
+    let mut plugin = Plugin::with_scratch_database();
+    plugin.reset_table(
+        "runtime_errors",
+        "id INT PRIMARY KEY, value INT NOT NULL CHECK (value >= 0)",
+    );
+    plugin.execute(format!(
+        "INSERT INTO [{TEST_SCHEMA}].[runtime_errors] VALUES (1, 1)"
+    ));
+
+    let query_error = plugin.call_error(
+        "execute_query",
+        json!({ "params": connection_params(), "query": "SELECT 1/0; SELECT 2" }),
+    );
+    assert!(
+        query_error.starts_with("SQL Server error 8134:"),
+        "{query_error}"
+    );
+
+    let update_error = plugin.call_error(
+        "update_record",
+        json!({
+            "params": connection_params(), "schema": TEST_SCHEMA, "table": "runtime_errors",
+            "pk_map": { "id": 1 }, "col_name": "value", "new_val": -1
+        }),
+    );
+    assert!(
+        update_error.starts_with("SQL Server error 547:"),
+        "{update_error}"
+    );
+
+    let insert_error = plugin.call_error(
+        "insert_record",
+        json!({
+            "params": connection_params(), "schema": TEST_SCHEMA, "table": "runtime_errors",
+            "data": { "id": 2, "value": -1 }
+        }),
+    );
+    assert!(
+        insert_error.starts_with("SQL Server error 547:"),
+        "{insert_error}"
+    );
+
+    // The same shape must stay quiet when nothing fails.
+    let updated = plugin.call_ok(
+        "update_record",
+        json!({
+            "params": connection_params(), "schema": TEST_SCHEMA, "table": "runtime_errors",
+            "pk_map": { "id": 1 }, "col_name": "value", "new_val": 5
+        }),
+    );
+    assert_eq!(updated, json!(1));
+    let rows = plugin.execute(format!(
+        "SELECT id, value FROM [{TEST_SCHEMA}].[runtime_errors] ORDER BY id"
+    ));
+    assert_eq!(rows["rows"], json!([[1, 5]]));
+}
+
 #[test]
 fn connection_authentication_and_tls_errors_are_actionable_and_redacted() {
     let mut plugin = Plugin::with_scratch_database();
