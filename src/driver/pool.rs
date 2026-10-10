@@ -180,24 +180,10 @@ impl Manager for BridgeManager {
             ));
         }
 
-        // SHOWPLAN must be disabled in its own batches: while SHOWPLAN_XML is
-        // active SQL Server plans later statements instead of executing them,
-        // including sp_reset_connection. Open transactions are discarded
-        // above; for reusable sessions the reset drops local temp tables,
-        // disables IDENTITY_INSERT and restores SET options before the startup
-        // script is reapplied.
-        conn.simple_query_raw("SET SHOWPLAN_XML OFF")
+        conn.client
+            .reset_session()
             .await
-            .map_err(RecycleError::Backend)?
-            .into_results();
-        conn.simple_query_raw("SET STATISTICS XML OFF")
-            .await
-            .map_err(RecycleError::Backend)?
-            .into_results();
-        conn.simple_query_raw("EXEC sp_reset_connection")
-            .await
-            .map_err(RecycleError::Backend)?
-            .into_results();
+            .map_err(RecycleError::Backend)?;
         self.apply_startup_script(conn)
             .await
             .map_err(RecycleError::Backend)?;

@@ -1,3 +1,5 @@
+#![recursion_limit = "256"]
+
 //! Entry point: read JSON-RPC lines from stdin, dispatch, write responses.
 //!
 //! Requests are fanned out to a small worker pool so a slow query on one

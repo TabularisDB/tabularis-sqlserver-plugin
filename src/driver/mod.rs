@@ -20,7 +20,7 @@ pub mod types;
 pub mod users;
 pub mod version;
 
-use mssql_tds::connection::tds_client::{ResultSet, ResultSetClient};
+use mssql_tds::connection::tds_client::{ExecuteOptions, ResultSet, StatementResult};
 use mssql_tiberius_bridge::row::RowSchema;
 use mssql_tiberius_bridge::Row;
 
@@ -98,66 +98,74 @@ async fn run_query_collecting(
         .close_query()
         .await
         .map_err(|error| error::format_tds_error(&error, Some(&ssl_mode)))?;
-    client
-        .execute(query.to_string(), query_timeout_seconds, None)
+    let options = query_timeout_seconds.map_or_else(ExecuteOptions::default, |seconds| {
+        ExecuteOptions::default().timeout_secs(seconds)
+    });
+    let mut statement_result = client
+        .execute(query.to_string(), options)
         .await
         .map_err(|error| error::format_tds_error(&error, Some(&ssl_mode)))?;
 
     let mut results = Vec::new();
     let mut retained_rows = 0usize;
     let mut stopped_early = false;
-    'result_sets: while let Some(result_set) = client.get_current_resultset() {
-        let metadata = result_set.get_metadata().clone();
-        let schema = RowSchema::from_metadata(&metadata);
-        let is_affected_rows_sentinel =
-            metadata.len() == 1 && metadata[0].column_name == helpers::AFFECTED_ROWS_COLUMN;
-        let mut current = empty_query_result(
-            metadata
-                .iter()
-                .map(|column| column.column_name.clone())
-                .collect(),
-        );
-        while let Some(values) = result_set
-            .next_row()
-            .await
-            .map_err(|error| error::format_tds_error(&error, Some(&ssl_mode)))?
-        {
-            if retained_rows >= MAX_RESULT_ROWS && !is_affected_rows_sentinel {
-                current.truncated = true;
-                if matches!(overflow_policy, OverflowPolicy::Stop) {
-                    results.push(current);
-                    stopped_early = true;
-                    break 'result_sets;
-                }
-                continue;
-            }
+    loop {
+        match statement_result {
+            StatementResult::Rows => {
+                let metadata = client.get_metadata().clone();
+                let schema = RowSchema::from_metadata(&metadata);
+                let is_affected_rows_sentinel =
+                    metadata.len() == 1 && metadata[0].column_name == helpers::AFFECTED_ROWS_COLUMN;
+                let mut current = empty_query_result(
+                    metadata
+                        .iter()
+                        .map(|column| column.column_name.clone())
+                        .collect(),
+                );
+                while let Some(values) = client
+                    .next_row()
+                    .await
+                    .map_err(|error| error::format_tds_error(&error, Some(&ssl_mode)))?
+                {
+                    if retained_rows >= MAX_RESULT_ROWS && !is_affected_rows_sentinel {
+                        current.truncated = true;
+                        if matches!(overflow_policy, OverflowPolicy::Stop) {
+                            stopped_early = true;
+                            break;
+                        }
+                        continue;
+                    }
 
-            let row = Row::from_schema(schema.clone(), values);
-            current.rows.push(
-                metadata
-                    .iter()
-                    .enumerate()
-                    .map(|(index, column)| {
-                        let column_type = extract::normalized_column_type(
-                            column.data_type,
-                            column.type_info.length,
-                        );
-                        extract::extract_value_as(&row, index, column_type)
-                    })
-                    .collect::<Result<Vec<_>, _>>()?,
-            );
-            if !is_affected_rows_sentinel {
-                retained_rows += 1;
+                    let row = Row::from_schema(schema.clone(), values);
+                    current.rows.push(
+                        metadata
+                            .iter()
+                            .enumerate()
+                            .map(|(index, column)| {
+                                let column_type = extract::normalized_column_type(
+                                    column.data_type,
+                                    column.type_info.length,
+                                );
+                                extract::extract_value_as(&row, index, column_type)
+                            })
+                            .collect::<Result<Vec<_>, _>>()?,
+                    );
+                    if !is_affected_rows_sentinel {
+                        retained_rows += 1;
+                    }
+                }
+                results.push(current);
             }
+            StatementResult::NoRows { .. } => {}
+            StatementResult::End => break,
         }
-        results.push(current);
-        if !client
-            .move_to_next()
-            .await
-            .map_err(|error| error::format_tds_error(&error, Some(&ssl_mode)))?
-        {
+        if stopped_early {
             break;
         }
+        statement_result = client
+            .advance()
+            .await
+            .map_err(|error| error::format_tds_error(&error, Some(&ssl_mode)))?;
     }
     if stopped_early {
         client

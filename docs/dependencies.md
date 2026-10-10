@@ -1,104 +1,47 @@
 # Dependency and supply-chain review
 
-This review was performed on 2026-08-30 against the versions locked in
-`Cargo.lock`. The SQL Server transport is intentionally treated as a
-release-critical dependency because both crates are preview releases.
+Updated 2026-10-10 for the locked `mssql-tiberius-bridge` 0.1.0 release. The
+bridge and protocol dependencies are exact-pinned because the plugin also uses
+the protocol API directly through `Client::inner_mut()`.
 
 ## TDS dependency provenance
 
 ### `mssql-tiberius-bridge`
 
-- **Resolved version:**
-  [`0.1.0-preview.3`](https://crates.io/crates/mssql-tiberius-bridge/0.1.0-preview.3),
-  source commit
-  [`fcd9008`](https://github.com/saurabh500/mssql-tiberius-bridge/commit/fcd9008e6ee38e6098c01a3b7547125b84b5e54a).
-- **Upstream:**
-  [`saurabh500/mssql-tiberius-bridge`](https://github.com/saurabh500/mssql-tiberius-bridge),
-  maintained separately from Microsoft. It provides a Tiberius-compatible API
-  over `mssql-tds` and pins the protocol crate itself.
-- **Licence:** MIT as declared by the
-  [published manifest](https://docs.rs/crate/mssql-tiberius-bridge/0.1.0-preview.3/source/Cargo.toml.orig).
-  MIT is compatible with this plugin's Apache-2.0 licence. The upstream
-  repository and published crate do not currently include a standalone licence
-  text, so the declaration is the licence evidence. Resolving that omission
-  and the release archive's third-party-notice policy before public binary
-  distribution is tracked in
-  [issue #4](https://github.com/TabularisDB/tabularis-sqlserver-plugin/issues/4).
-- **Release cadence:** all five published previews arrived in a ten-day burst:
-  preview.1 on 2026-05-08, preview.2 and preview.3 on 2026-05-10, preview.4
-  later on 2026-05-10, and
-  [preview.5](https://github.com/saurabh500/mssql-tiberius-bridge/releases/tag/v0.1.0-preview.5)
-  on 2026-05-18. There has been no release after preview.5, and the repository's
-  [latest commit](https://github.com/saurabh500/mssql-tiberius-bridge/commit/9a3d10a5b810a02cc0a59dc7cc91b2ef8835f4b0)
-  was 2026-05-21.
-- **Maintenance status:** the repository is public and not archived, but it is
-  a young, single-owner project. The initial development burst has not been
-  followed by a commit in more than three months, the generated
-  [preview.6 pull request](https://github.com/saurabh500/mssql-tiberius-bridge/pull/97)
-  remains open, and a recent reliability report has no response yet. Treat it
-  as active-but-unproven rather than as a stable, regularly maintained client.
+- **Resolved version:** [`0.1.0`](https://crates.io/crates/mssql-tiberius-bridge/0.1.0),
+  released 2026-09-11. This is the latest published bridge version as of this
+  review.
+- **Upstream:** [`saurabh500/mssql-tiberius-bridge`](https://github.com/saurabh500/mssql-tiberius-bridge).
+  The MIT-licensed crate provides a Tiberius-compatible API over Microsoft's
+  `mssql-tds` protocol implementation.
+- **Upgrade impact:** 0.1.0 replaces the preview TDS crate with published
+  `mssql-tds` 0.1.0 and changes its result-set and error APIs. It also adds
+  `Client::reset_session()`, which performs a native TDS session reset and
+  restores `READ COMMITTED`; the pool uses this API before reapplying the
+  configured startup script.
 
-Preview.4 and preview.5 already exist, but this plugin stays on the exact
-preview.3 build that was reviewed and smoke-tested. A caret requirement on a
-`0.1.0-preview.*` compatibility layer would permit an unreviewed API or wire
-behaviour change when the lockfile is refreshed. The `=` pin makes an upgrade
-an explicit change with its own dependency diff and live SQL Server evidence.
+### `mssql-tds`
 
-### `mssql-tds-preview`
+- **Resolved version:** [`0.1.0`](https://crates.io/crates/mssql-tds/0.1.0),
+  the protocol API required by bridge 0.1.0. Although `mssql-tds` 0.2.0 is now
+  published, bridge 0.1.0 requires the 0.1 API, so the plugin pins 0.1.0.
+- **Upstream and licence:** Microsoft's
+  [`microsoft/mssql-rs`](https://github.com/microsoft/mssql-rs), MIT.
+- The direct dependency exposes result-set metadata and row iteration not
+  re-exported by the bridge. Its default authentication features remain enabled
+  for Windows/Kerberos support.
 
-- **Resolved version:**
-  [`0.1.0-preview.1`](https://crates.io/crates/mssql-tds-preview/0.1.0-preview.1),
-  source commit
-  [`d43bdcc`](https://github.com/saurabh500/mssql-rs/commit/d43bdcc2f2d6f16155a259e2db7240365e6271df).
-- **Published upstream:**
-  [`saurabh500/mssql-rs`](https://github.com/saurabh500/mssql-rs), a publishable
-  fork of Microsoft's
-  [`microsoft/mssql-rs`](https://github.com/microsoft/mssql-rs) until Microsoft
-  publishes the official crate. The plugin therefore consumes a third-party
-  crates.io package even though the protocol implementation originated at
-  Microsoft.
-- **Licence:** MIT in the
-  [crate manifest](https://docs.rs/crate/mssql-tds-preview/0.1.0-preview.1/source/Cargo.toml.orig)
-  and the
-  [fork licence](https://github.com/saurabh500/mssql-rs/blob/main/LICENSE).
-  MIT is compatible with Apache-2.0.
-- **Maintenance status:** the publishing fork had a commit on 2026-08-21 and
-  Microsoft's source remains active. The published preview line has moved to
-  preview.9, but the bridge preview.3 requires protocol preview.1 exactly.
-  Advancing either dependency independently is not supported.
+## Historical review notes
 
-The plugin has a direct dependency on `mssql-tds-preview` because the bridge
-does not re-export the result-set traits used through `Client::inner_mut()`.
-Its default integrated-authentication feature is disabled: the plugin ships
-SQL authentication only.
-
-## Protocol crate dependency surface
-
-The exact preview.1
-[manifest](https://docs.rs/crate/mssql-tds-preview/0.1.0-preview.1/source/Cargo.toml.orig)
-declares these runtime dependencies:
-
-- async/runtime and I/O: `async-trait`, `tokio` with `full`, `tokio-util` with
-  `full`, `futures`, `bytes`, `byteorder`, `socket2`, and `tracing`;
-- TLS and certificate parsing: `native-tls` with ALPN, `tokio-native-tls`, and
-  `x509-parser`;
-- SQL values and text: `bigdecimal`, `uuid` with v4 and fast RNG,
-  `encoding_rs`, and `bitflags`;
-- networking and support: `dns-lookup`, `hostname`, `pretty-hex`, and
-  `thiserror`;
-- platform dependencies: `libc` on Unix and `winapi` plus `windows` on
-  Windows.
-
-On Linux, `native-tls` means the release environment must provide OpenSSL. The
-bridge disables the protocol crate's default features, and this plugin now does
-so on its direct edge as well, preventing the unused `integrated-auth` feature
-from being unified back into the build.
+The sections below retain findings from the 2026-08-30 review of preview.3 and
+preview.1. Their issue-status and license-inventory details were not
+re-audited as part of this dependency upgrade; do not treat them as current
+findings for bridge 0.1.0.
 
 ## Open upstream issues relevant to this plugin
 
-The following open issues touch code paths the plugin uses. They are reviewed
-on every bridge upgrade; issue links and status are current as of the review
-date above.
+The following issues were recorded in the historical review. Re-triage them
+against the exact source versions before relying on their status.
 
 - [Bridge #104](https://github.com/saurabh500/mssql-tiberius-bridge/issues/104)
   reports pooled connections intermittently returning no rows after 5–15
@@ -140,15 +83,13 @@ or regressions carry across forks.
 
 ## Upgrade procedure
 
-When considering preview.4 or any later release:
+For future bridge upgrades:
 
 1. Read the bridge and protocol changelogs and compare both source tags against
-   the currently recorded commits. Triage the issues above and all new issues
-   touching pooling, TLS, query draining, metadata, values, or DML counts.
-2. Inspect the candidate bridge manifest and update
-   `mssql-tiberius-bridge` and the direct `mssql-tds-preview` pin together to
-   the exact protocol version it requires. Keep `default-features = false` on
-   the protocol edge.
+   the currently recorded versions. Triage issues touching pooling, TLS, query
+   draining, metadata, values, or DML counts.
+2. Inspect the bridge manifest and update `mssql-tiberius-bridge` and the
+   direct `mssql-tds` pin together to the exact compatible protocol version.
 3. Run `cargo update` only for those packages, review the complete
    `Cargo.lock` and `cargo tree -p mssql-tiberius-bridge` diffs, and repeat the
    licence inventory below for every newly resolved package.
@@ -156,8 +97,8 @@ When considering preview.4 or any later release:
    live SQL Server integration suite. The live suite must cover zero-row
    metadata, DML row counts, `IDENTITY_INSERT`, pagination, error recovery,
    pool reuse, TLS modes, and SHOWPLAN capture.
-5. Land the upgrade as an explicit dependency change. Never relax the exact
-   pin merely because upstream labels two previews API-compatible.
+5. Land the upgrade as an explicit dependency change. Keep exact pins even for
+   stable releases so the direct protocol dependency stays aligned.
 
 ## Fallback plan
 

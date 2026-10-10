@@ -142,9 +142,13 @@ pub fn extract_value_as(row: &Row, idx: usize, column_type: ColumnType) -> Resul
         },
 
         // Binary
-        ColumnType::Image | ColumnType::Binary | ColumnType::VarBinary | ColumnType::BigVarBin => {
-            read_binary_as_base64(row, idx)
-        }
+        ColumnType::Image
+        | ColumnType::Binary
+        | ColumnType::VarBinary
+        | ColumnType::BigVarBin
+        | ColumnType::Geography
+        | ColumnType::Geometry
+        | ColumnType::Udt => read_binary_as_base64(row, idx),
 
         ColumnType::Vector => match row.raw_value(idx) {
             Some(ColumnValues::Vector(vector)) => vector_to_json(vector),

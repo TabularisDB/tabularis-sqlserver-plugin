@@ -22,13 +22,16 @@ pub fn format_bridge_error(error: &BridgeError, ssl_mode: Option<&str>) -> Strin
         | BridgeError::ColumnIndexOutOfBounds { .. }
         | BridgeError::Conversion(_) => format!("SQL Server data conversion failure: {error}"),
         BridgeError::Pool(message) => format!("SQL Server connection-pool failure: {message}"),
+        BridgeError::InvalidPreparedStatement => {
+            format!("SQL Server driver failure: {error}")
+        }
     }
 }
 
 /// Format errors from the underlying Microsoft TDS client.
 pub fn format_tds_error(error: &TdsError, ssl_mode: Option<&str>) -> String {
     match error {
-        TdsError::SqlServerError { errors } => format_server_errors(errors),
+        TdsError::SqlServerError { diagnostics } => format_server_errors(&diagnostics.errors),
         TdsError::TlsError(_)
         | TdsError::TlsHandshakeError { .. }
         | TdsError::CertificateNotFound { .. }
@@ -55,7 +58,11 @@ pub fn format_tds_error(error: &TdsError, ssl_mode: Option<&str>) -> String {
         | TdsError::UnimplementedFeature { .. }
         | TdsError::TypeConversionError(_)
         | TdsError::UnsupportedEncoding { .. }
-        | TdsError::BulkCopyError(_) => format!("SQL Server driver failure: {error}"),
+        | TdsError::BulkCopyError(_)
+        | TdsError::ColumnEncryptionError(_) => format!("SQL Server driver failure: {error}"),
+        TdsError::ConnectionResetNotAcknowledged => {
+            format!("SQL Server connection failure: {error}")
+        }
     }
 }
 
@@ -111,6 +118,7 @@ pub fn bridge_error_requires_discard(error: &BridgeError) -> bool {
                 | TdsError::ConnectionError(_)
                 | TdsError::SqlServerError { .. }
                 | TdsError::ConnectionClosed(_)
+                | TdsError::ConnectionResetNotAcknowledged
                 | TdsError::ProtocolError(_)
                 | TdsError::TlsError(_)
                 | TdsError::TlsHandshakeError { .. }
@@ -228,6 +236,17 @@ mod tests {
                 "error {number}"
             );
         }
+    }
+
+    #[test]
+    fn unacknowledged_session_reset_is_reported_and_discarded() {
+        let error = BridgeError::Tds(TdsError::ConnectionResetNotAcknowledged);
+
+        assert!(format_bridge_error(&error, None).contains("SQL Server connection failure"));
+        assert!(bridge_error_requires_discard(&error));
+        assert!(!bridge_error_requires_discard(
+            &BridgeError::InvalidPreparedStatement
+        ));
     }
 
     #[test]

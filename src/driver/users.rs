@@ -7,6 +7,7 @@
 
 use std::collections::BTreeMap;
 
+use mssql_tds::connection::tds_client::ExecuteOptions;
 use mssql_tds::message::transaction_management::TransactionIsolationLevel;
 use mssql_tiberius_bridge::Row;
 
@@ -345,11 +346,11 @@ async fn execute_transaction_batch(
         .map_err(|error| error.to_string())?;
 
     for statement in statements {
-        let outcome = match client
-            .execute(statement.clone(), query_timeout_seconds, None)
-            .await
-        {
-            Ok(()) => client.close_query().await,
+        let options = query_timeout_seconds.map_or_else(ExecuteOptions::default, |seconds| {
+            ExecuteOptions::default().timeout_secs(seconds)
+        });
+        let outcome = match client.execute(statement.clone(), options).await {
+            Ok(_) => client.close_query().await,
             Err(error) => Err(error),
         };
         if let Err(error) = outcome {
