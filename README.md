@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="https://raw.githubusercontent.com/TabularisDB/tabularis/main/public/logo-sm.png" width="120" height="120" alt="Tabularis logo" />
+  <img src="https://raw.githubusercontent.com/TabularisDB/tabularis/main/packages/web-ui/public/logo-sm.png" width="120" height="120" alt="Tabularis logo" />
   <img src="https://raw.githubusercontent.com/TabularisDB/tabularis-sqlserver-plugin/main/sqlserver-icon.svg" width="120" height="120" alt="SQL Server plugin icon" />
 </div>
 
