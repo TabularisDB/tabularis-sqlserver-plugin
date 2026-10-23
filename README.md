@@ -1,6 +1,15 @@
 <div align="center">
-  <img src="https://raw.githubusercontent.com/TabularisDB/tabularis/main/packages/web-ui/public/logo-sm.png" width="120" height="120" alt="Tabularis logo" />
-  <img src="https://raw.githubusercontent.com/TabularisDB/tabularis-sqlserver-plugin/main/sqlserver-icon.svg" width="120" height="120" alt="SQL Server plugin icon" />
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/TabularisDB/tabularis/main/.github/assets/banner-dark.png" />
+    <img src="https://raw.githubusercontent.com/TabularisDB/tabularis/main/.github/assets/banner-light.png" alt="tabularis — the database client your AI agent can actually use" width="600" />
+  </picture>
+
+  <br/>
+
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/TabularisDB/tabularis-sqlserver-plugin/main/assets/sqlserver-banner-dark.png" />
+    <img src="https://raw.githubusercontent.com/TabularisDB/tabularis-sqlserver-plugin/main/assets/sqlserver-banner-light.png" alt="Native SQL Server support" width="600" />
+  </picture>
 </div>
 
 # tabularis-sqlserver-plugin
