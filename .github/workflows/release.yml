@@ -39,8 +39,8 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v7
         with:
-          # pnpm 11.23 requires Node 22.13 or newer.
-          node-version: "22.13"
+          # tsup 9 requires Node 22.18 or newer on the Node 22 line.
+          node-version: "22.18"
 
       # Typecheck and test the parser before any platform binary is built so a
       # broken parser fails the whole release instead of only the npm half.
@@ -126,8 +126,8 @@ jobs:
         if: steps.ui.outputs.present == 'true' || steps.explain.outputs.present == 'true'
         uses: actions/setup-node@v7
         with:
-          # pnpm 11.23 requires Node 22.13 or newer.
-          node-version: "22.13"
+          # tsup 9 requires Node 22.18 or newer on the Node 22 line.
+          node-version: "22.18"
 
       - name: Build UI
         if: steps.ui.outputs.present == 'true'
@@ -225,7 +225,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v7
         with:
-          node-version: "22.13"
+          node-version: "22.18"
           registry-url: "https://registry.npmjs.org"
 
       # npm never accepts a second publish of an existing version, so a re-run
