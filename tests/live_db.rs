@@ -23,6 +23,52 @@ use serde_json::{json, Value};
 
 const TEST_SCHEMA: &str = "ss003";
 
+#[test]
+fn minimal_commit_transaction_batch() {
+    let mut plugin = Plugin::with_scratch_database();
+    plugin.execute("BEGIN TRANSACTION; COMMIT TRANSACTION;");
+    let state = plugin.execute("SELECT @@TRANCOUNT AS transaction_count");
+    assert_eq!(state["rows"], json!([[0]]));
+
+    let committed = plugin.execute(
+        "CREATE TABLE #ss044_commit (id INT NOT NULL); \
+         BEGIN TRANSACTION; \
+         INSERT INTO #ss044_commit VALUES (44); \
+         COMMIT TRANSACTION; \
+         SELECT id, @@TRANCOUNT AS transaction_count FROM #ss044_commit",
+    );
+    assert_eq!(committed["rows"], json!([[44, 0]]));
+}
+
+#[test]
+fn unicode_login_and_password_connect() {
+    const LOGIN: &str = "ss051_ö_login";
+    const PASSWORD: &str = "Ss051!Pässwörd9";
+
+    let mut plugin = Plugin::spawn();
+    let admin = connection_params_for("master", "ss051-admin");
+    plugin.execute_with(
+        &admin,
+        format!(
+            "IF SUSER_ID(N'{LOGIN}') IS NOT NULL DROP LOGIN [{LOGIN}]; \
+             CREATE LOGIN [{LOGIN}] WITH PASSWORD = N'{PASSWORD}', CHECK_POLICY = OFF"
+        ),
+    );
+
+    for ssl_mode in ["disable", "preferred", "require"] {
+        let mut params = connection_params_for("master", &format!("ss051-{ssl_mode}"));
+        params["username"] = json!(LOGIN);
+        params["password"] = json!(PASSWORD);
+        params["ssl_mode"] = json!(ssl_mode);
+        plugin.call_ok("test_connection", json!({ "params": params }));
+        let result = plugin.execute_with(&params, "SELECT CAST(51 AS INT) AS connected");
+        assert_eq!(result["rows"], json!([[51]]), "ssl_mode={ssl_mode}");
+    }
+
+    plugin.call_ok("shutdown", json!({}));
+    plugin.execute_with(&admin, format!("DROP LOGIN [{LOGIN}]"));
+}
+
 fn env_or(key: &str, default: &str) -> String {
     std::env::var(key).unwrap_or_else(|_| default.to_string())
 }
