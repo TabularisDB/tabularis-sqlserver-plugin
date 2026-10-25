@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-beta.4] - 2026-10-25
+
+### Changed
+
+- Upgrade Microsoft's `mssql-tiberius-bridge` and `mssql-tds` to 0.2.0 (#38).
+- Update Tokio, UUID, serde_json and the EXPLAIN package's development tools.
+- Declare the stable plugin id and display name in the registry manifest (#43).
+
+### Fixed
+
+- Correct LOGIN7 Unicode field lengths through the protocol upgrade, allowing
+  non-ASCII login names and passwords (#51).
+- Support explicit transaction batches, including minimal `BEGIN TRANSACTION;
+  COMMIT TRANSACTION;`, through the protocol upgrade (#44).
+- Preserve SQL Server runtime errors followed by result sets (#37, #39).
+- Read triggers and metadata on databases below compatibility level 110 (#34).
+- Explicitly include Node types when checking EXPLAIN tests with Vitest 5.
+
+### Tests
+
+- Add live JSON-RPC regressions for committed transaction batches and Unicode
+  authentication across `disable`, `preferred` and `require` TLS modes.
+
 ## [1.0.0-beta.3] - 2026-09-29
 
 ### Added
@@ -123,7 +146,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   regression coverage for pool identity, million-row truncation and concurrent
   responsiveness.
 
-[Unreleased]: https://github.com/TabularisDB/tabularis-sqlserver-plugin/compare/v1.0.0-beta.3...HEAD
+[Unreleased]: https://github.com/TabularisDB/tabularis-sqlserver-plugin/compare/v1.0.0-beta.4...HEAD
+[1.0.0-beta.4]: https://github.com/TabularisDB/tabularis-sqlserver-plugin/compare/v1.0.0-beta.3...v1.0.0-beta.4
 [1.0.0-beta.3]: https://github.com/TabularisDB/tabularis-sqlserver-plugin/compare/v1.0.0-beta.2...v1.0.0-beta.3
 [1.0.0-beta.2]: https://github.com/TabularisDB/tabularis-sqlserver-plugin/compare/v1.0.0-beta.1...v1.0.0-beta.2
 [1.0.0-beta.1]: https://github.com/TabularisDB/tabularis-sqlserver-plugin/releases/tag/v1.0.0-beta.1
