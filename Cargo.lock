@@ -765,6 +765,43 @@ dependencies = [
 ]
 
 [[package]]
+name = "mssql-tds"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c7a53513324677e601ca5b91e477840329ec6c244875fd55b155e5a8e8af7805"
+dependencies = [
+ "async-trait",
+ "bigdecimal",
+ "bitflags",
+ "byteorder",
+ "bytes",
+ "core-foundation",
+ "dns-lookup",
+ "encoding_rs",
+ "futures",
+ "half",
+ "hostname",
+ "libc",
+ "native-tls",
+ "openssl",
+ "pretty-hex",
+ "security-framework",
+ "security-framework-sys",
+ "socket2 0.5.10",
+ "thiserror",
+ "tokio",
+ "tokio-native-tls",
+ "tokio-util",
+ "tracing",
+ "uuid",
+ "winapi",
+ "windows",
+ "windows-sys 0.59.0",
+ "x509-parser",
+ "zeroize",
+]
+
+[[package]]
 name = "mssql-tiberius-bridge"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -775,7 +812,7 @@ dependencies = [
  "chrono",
  "deadpool 0.12.3",
  "futures-core",
- "mssql-tds",
+ "mssql-tds 0.2.0",
  "rust_decimal",
  "serde_json",
  "thiserror",
@@ -1325,7 +1362,7 @@ dependencies = [
  "chrono",
  "deadpool 0.13.1",
  "infer",
- "mssql-tds",
+ "mssql-tds 0.3.0",
  "mssql-tiberius-bridge",
  "once_cell",
  "openssl",
