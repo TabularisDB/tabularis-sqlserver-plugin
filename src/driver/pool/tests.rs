@@ -62,6 +62,23 @@ fn build_config_accepts_integrated_auth_without_credentials() {
 }
 
 #[test]
+fn build_config_accepts_ntlm_credentials() {
+    let mut params = base_params(Some("localhost"), Some(1433), "master");
+    params.username = Some(r"CONTOSO\alice".into());
+    params.ntlm = true;
+    assert!(build_config(&params, &PluginSettings::default()).is_ok());
+}
+
+#[test]
+fn build_config_rejects_a_malformed_ntlm_username() {
+    let mut params = base_params(Some("localhost"), Some(1433), "master");
+    params.username = Some(r"CONTOSO\alice\bob".into());
+    params.ntlm = true;
+    let error = build_config(&params, &PluginSettings::default()).unwrap_err();
+    assert!(error.contains("NTLM username"), "{error}");
+}
+
+#[test]
 fn manager_is_clone_send_sync() {
     fn assert_send<T: Send>() {}
     fn assert_sync<T: Sync>() {}

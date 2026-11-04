@@ -49,6 +49,12 @@ pub fn resolve_connection_params(params: &ConnectionParams) -> Result<Connection
         }
     }
 
+    if let Some(value) = resolved.extra.get("ntlm") {
+        if parse_bool("ntlm", value)? {
+            resolved.ntlm = true;
+        }
+    }
+
     let connection_string = params
         .connection_string
         .as_deref()
@@ -133,6 +139,20 @@ pub fn resolve_connection_params(params: &ConnectionParams) -> Result<Connection
             "SQL Server integrated authentication cannot be combined with a username or password"
                 .into(),
         );
+    }
+    if resolved.ntlm {
+        if resolved.integrated_auth {
+            return Err(
+                "SQL Server NTLM authentication cannot be combined with integrated authentication"
+                    .into(),
+            );
+        }
+        if non_empty(resolved.username.clone()).is_none() {
+            return Err(
+                "SQL Server NTLM authentication requires a DOMAIN\\user or user@domain username"
+                    .into(),
+            );
+        }
     }
 
     Ok(resolved)
@@ -811,6 +831,46 @@ mod tests {
 
         let resolved = resolve_connection_params(&input).unwrap();
         assert!(resolved.integrated_auth);
+    }
+
+    #[test]
+    fn extra_field_sets_ntlm_and_keeps_the_credentials() {
+        let mut input = ConnectionParams {
+            host: Some("localhost".into()),
+            username: Some(r"CONTOSO\alice".into()),
+            password: Some("secret".into()),
+            ..Default::default()
+        };
+        input.extra.insert("ntlm".into(), "true".into());
+
+        let resolved = resolve_connection_params(&input).unwrap();
+        assert!(resolved.ntlm);
+        assert_eq!(resolved.username.as_deref(), Some(r"CONTOSO\alice"));
+    }
+
+    #[test]
+    fn ntlm_requires_a_username() {
+        let mut input = ConnectionParams {
+            host: Some("localhost".into()),
+            ..Default::default()
+        };
+        input.extra.insert("ntlm".into(), "true".into());
+
+        let error = resolve_connection_params(&input).unwrap_err();
+        assert!(error.contains("requires"), "{error}");
+    }
+
+    #[test]
+    fn ntlm_cannot_be_combined_with_integrated_auth() {
+        let mut input = ConnectionParams {
+            host: Some("localhost".into()),
+            ..Default::default()
+        };
+        input.extra.insert("ntlm".into(), "true".into());
+        input.extra.insert("integrated_auth".into(), "true".into());
+
+        let error = resolve_connection_params(&input).unwrap_err();
+        assert!(error.contains("NTLM"), "{error}");
     }
 
     #[test]

@@ -58,6 +58,7 @@ pub fn format_tds_error(error: &TdsError, ssl_mode: Option<&str>) -> String {
         | TdsError::ImplementationError(_)
         | TdsError::UnimplementedFeature { .. }
         | TdsError::TypeConversionError(_)
+        | TdsError::EncodedValueTooLong { .. }
         | TdsError::UnsupportedEncoding { .. }
         | TdsError::BulkCopyError(_)
         | TdsError::ColumnEncryptionError(_) => format!("SQL Server driver failure: {error}"),
