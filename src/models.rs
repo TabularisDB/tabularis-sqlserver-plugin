@@ -56,6 +56,9 @@ pub struct ConnectionParams {
     /// Windows/Kerberos auth (SSPI/GSSAPI). Set via `extra["integrated_auth"]`
     /// or `Integrated Security=True` in `connection_string`; excludes username/password.
     pub integrated_auth: bool,
+    /// NTLM with `username` as `DOMAIN\user` (or `user@domain`) and `password`,
+    /// on every platform. Set via `extra["ntlm"]`; excludes `integrated_auth`.
+    pub ntlm: bool,
     /// Opaque plugin-specific fields forwarded verbatim by the host.
     pub extra: HashMap<String, String>,
     /// URL or ADO.NET/ODBC keyword connection string. It is parsed and

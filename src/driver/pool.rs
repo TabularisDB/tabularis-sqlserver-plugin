@@ -11,10 +11,12 @@
 //! requests encrypted local-development-compatible connections.
 
 use std::future::Future;
+use std::sync::Arc;
 use std::time::Duration;
 
 use crate::connection::{custom_ca_error, resolve_connection_params};
 use crate::driver::error::{bridge_error_requires_discard, format_bridge_error};
+use crate::driver::ntlm::NtlmProvider;
 use crate::models::ConnectionParams;
 use crate::settings::PluginSettings;
 use deadpool::managed::{Manager, Metrics, RecycleError, RecycleResult};
@@ -194,8 +196,8 @@ impl Manager for BridgeManager {
 /// Build a `mssql_tiberius_bridge::Config` from Tabularis `ConnectionParams`.
 ///
 /// Consumes the shared connection fields used by current Tabularis drivers.
-/// Uses `AuthMethod::Integrated` when `integrated_auth` is set, else
-/// username/password. TLS maps `ssl_mode` onto the bridge's encryption policy.
+/// Uses `AuthMethod::Integrated` when `integrated_auth` is set, the same with
+/// an [`NtlmProvider`] when `ntlm` is set, else username/password. TLS maps `ssl_mode` onto the bridge's encryption policy.
 pub fn build_config(
     params: &ConnectionParams,
     settings: &PluginSettings,
@@ -207,6 +209,13 @@ pub fn build_config(
     cfg.database(params.database.primary());
     if params.integrated_auth {
         cfg.authentication(AuthMethod::Integrated);
+    } else if params.ntlm {
+        let provider = NtlmProvider::new(
+            params.username.as_deref().unwrap_or(""),
+            params.password.as_deref().unwrap_or(""),
+        )?;
+        cfg.authentication(AuthMethod::Integrated)
+            .security_context_provider(Arc::new(provider));
     } else {
         cfg.authentication(AuthMethod::sql_server(
             params.username.as_deref().unwrap_or("sa"),

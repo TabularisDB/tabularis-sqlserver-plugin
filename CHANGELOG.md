@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- NTLM authentication with `DOMAIN\user` and password on every platform,
+  including Linux and macOS (`extra.ntlm`, "Use NTLM" checkbox).
+
+### Changed
+
+- Upgrade Microsoft's `mssql-tiberius-bridge` to 0.3.0 and `mssql-tds` to 0.4.0.
+
 ## [1.0.0-beta.4] - 2026-10-25
 
 ### Changed
