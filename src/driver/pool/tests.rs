@@ -1,4 +1,5 @@
 use super::*;
+use crate::common::random_secret;
 use crate::models::{ConnectionParams, DatabaseSelection};
 use crate::settings::PluginSettings;
 
@@ -8,7 +9,7 @@ fn base_params(host: Option<&str>, port: Option<u16>, db: &str) -> ConnectionPar
         host: host.map(String::from),
         port,
         username: Some("sa".into()),
-        password: Some("Strong!Pass123".into()),
+        password: Some(random_secret()),
         database: DatabaseSelection::Single(db.into()),
         ..Default::default()
     }

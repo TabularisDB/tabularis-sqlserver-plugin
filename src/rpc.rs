@@ -412,7 +412,7 @@ mod tests {
                             host: Some("localhost".into()),
                             port: Some(1433),
                             username: Some("sa".into()),
-                            password: Some("test-password".into()),
+                            password: Some(crate::common::random_secret()),
                             database: crate::models::DatabaseSelection::Single("master".into()),
                             connection_id: Some("shutdown-rpc-test".into()),
                             ..Default::default()

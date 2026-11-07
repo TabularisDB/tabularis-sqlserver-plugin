@@ -127,18 +127,8 @@ impl SecurityContext for NtlmContext {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rand::distributions::Alphanumeric;
-    use rand::{thread_rng, Rng};
+    use crate::common::random_secret;
     use sspi::ServerRequestFlags;
-
-    /// A fresh random password, so no test depends on a fixed secret.
-    fn random_secret() -> String {
-        thread_rng()
-            .sample_iter(&Alphanumeric)
-            .take(24)
-            .map(char::from)
-            .collect()
-    }
 
     /// Runs the client against sspi's NTLM server, as SQL Server would.
     fn handshake(user: &str, client_password: &str, server_password: &str) -> sspi::Result<()> {

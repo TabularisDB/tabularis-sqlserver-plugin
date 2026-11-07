@@ -274,19 +274,20 @@ mod tests {
 
     #[test]
     fn redaction_removes_password_and_connection_string() {
-        let connection_string = "Server=db;User Id=sa;Password=NeverExposeThis!;Encrypt=true";
+        let secret = crate::common::random_secret();
+        let connection_string = format!("Server=db;User Id=sa;Password={secret};Encrypt=true");
         let params = ConnectionParams {
-            password: Some("NeverExposeThis!".into()),
-            connection_string: Some(connection_string.into()),
+            password: Some(secret.clone()),
+            connection_string: Some(connection_string.clone()),
             database: DatabaseSelection::Single("master".into()),
             ..Default::default()
         };
         let message = redact_connection_secrets(
-            format!("failed with NeverExposeThis! from {connection_string}"),
+            format!("failed with {secret} from {connection_string}"),
             &params,
         );
-        assert!(!message.contains("NeverExposeThis!"));
-        assert!(!message.contains(connection_string));
+        assert!(!message.contains(&secret));
+        assert!(!message.contains(&connection_string));
         assert!(message.contains("<redacted>"));
     }
 }
