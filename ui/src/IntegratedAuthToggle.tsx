@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, type CSSProperties } from "react";
 import type { SlotComponentProps } from "@tabularis/plugin-api";
 
 // Optional: falls back gracefully on hosts predating TabularisDB/tabularis#780.
@@ -9,44 +9,61 @@ interface ExtraFieldsContext {
   setCredentialFieldsHidden?: (hidden: boolean) => void;
 }
 
+type AuthMode = "integrated_auth" | "ntlm";
+
+const modesStyle: CSSProperties = { display: "flex", flexDirection: "column", gap: 4 };
+const checkboxLabelStyle: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 8,
+  cursor: "pointer",
+};
+
+interface ModeCheckboxProps {
+  label: string;
+  checked: boolean;
+  onToggle: (on: boolean) => void;
+}
+
+function ModeCheckbox({ label, checked, onToggle }: ModeCheckboxProps) {
+  return (
+    <label style={checkboxLabelStyle}>
+      <input type="checkbox" checked={checked} onChange={(e) => onToggle(e.target.checked)} />
+      {label}
+    </label>
+  );
+}
+
 export default function IntegratedAuthToggle({ context }: SlotComponentProps) {
   const c = context as ExtraFieldsContext;
-  const checked = c.extra?.integrated_auth === "true";
+  const integratedAuth = c.extra?.integrated_auth === "true";
   const ntlm = c.extra?.ntlm === "true";
   const setCredentialFieldsHidden = c.setCredentialFieldsHidden;
 
   // Also runs on mount: a saved connection arrives with extra.integrated_auth
   // already set and never fires onChange.
   useEffect(() => {
-    setCredentialFieldsHidden?.(checked);
-  }, [checked, setCredentialFieldsHidden]);
+    setCredentialFieldsHidden?.(integratedAuth);
+  }, [integratedAuth, setCredentialFieldsHidden]);
 
   // The two modes exclude each other; the backend rejects both at once.
-  const select = (key: "integrated_auth" | "ntlm", other: string, on: boolean) => {
-    c.setExtraField?.(key, on ? "true" : "");
+  const selectMode = (mode: AuthMode, other: AuthMode, on: boolean) => {
+    c.setExtraField?.(mode, on ? "true" : "");
     if (on) c.setExtraField?.(other, "");
   };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-      <label style={labelStyle}>
-        <input
-          type="checkbox"
-          checked={checked}
-          onChange={(e) => select("integrated_auth", "ntlm", e.target.checked)}
-        />
-        Use Windows Authentication
-      </label>
-      <label style={labelStyle}>
-        <input
-          type="checkbox"
-          checked={ntlm}
-          onChange={(e) => select("ntlm", "integrated_auth", e.target.checked)}
-        />
-        Use NTLM (username as DOMAIN\user)
-      </label>
+    <div style={modesStyle}>
+      <ModeCheckbox
+        label="Use Windows Authentication"
+        checked={integratedAuth}
+        onToggle={(on) => selectMode("integrated_auth", "ntlm", on)}
+      />
+      <ModeCheckbox
+        label="Use NTLM (username as DOMAIN\user)"
+        checked={ntlm}
+        onToggle={(on) => selectMode("ntlm", "integrated_auth", on)}
+      />
     </div>
   );
 }
-
-const labelStyle = { display: "flex", alignItems: "center", gap: 8, cursor: "pointer" };
