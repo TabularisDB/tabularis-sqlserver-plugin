@@ -1,4 +1,4 @@
-import { useEffect, type CSSProperties } from "react";
+import { useEffect } from "react";
 import type { SlotComponentProps } from "@tabularis/plugin-api";
 
 // Optional: falls back gracefully on hosts predating TabularisDB/tabularis#780.
@@ -11,14 +11,6 @@ interface ExtraFieldsContext {
 
 type AuthMode = "integrated_auth" | "ntlm";
 
-const modesStyle: CSSProperties = { display: "flex", flexDirection: "column", gap: 4 };
-const checkboxLabelStyle: CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  gap: 8,
-  cursor: "pointer",
-};
-
 interface ModeCheckboxProps {
   label: string;
   checked: boolean;
@@ -27,7 +19,7 @@ interface ModeCheckboxProps {
 
 function ModeCheckbox({ label, checked, onToggle }: ModeCheckboxProps) {
   return (
-    <label style={checkboxLabelStyle}>
+    <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
       <input type="checkbox" checked={checked} onChange={(e) => onToggle(e.target.checked)} />
       {label}
     </label>
@@ -53,7 +45,7 @@ export default function IntegratedAuthToggle({ context }: SlotComponentProps) {
   };
 
   return (
-    <div style={modesStyle}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
       <ModeCheckbox
         label="Use Windows Authentication"
         checked={integratedAuth}
