@@ -127,7 +127,18 @@ impl SecurityContext for NtlmContext {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rand::distributions::Alphanumeric;
+    use rand::{thread_rng, Rng};
     use sspi::ServerRequestFlags;
+
+    /// A fresh random password, so no test depends on a fixed secret.
+    fn random_secret() -> String {
+        thread_rng()
+            .sample_iter(&Alphanumeric)
+            .take(24)
+            .map(char::from)
+            .collect()
+    }
 
     /// Runs the client against sspi's NTLM server, as SQL Server would.
     fn handshake(user: &str, client_password: &str, server_password: &str) -> sspi::Result<()> {
@@ -182,12 +193,15 @@ mod tests {
 
     #[test]
     fn completes_a_handshake_with_matching_credentials() {
-        handshake(r"CONTOSO\alice", "Secret1!", "Secret1!").expect("server accepts");
+        let secret = random_secret();
+        handshake(r"CONTOSO\alice", &secret, &secret).expect("server accepts");
     }
 
     #[test]
     fn a_wrong_password_is_rejected() {
-        assert!(handshake(r"CONTOSO\alice", "wrong", "Secret1!").is_err());
+        let (client_secret, server_secret) = (random_secret(), random_secret());
+        assert_ne!(client_secret, server_secret);
+        assert!(handshake(r"CONTOSO\alice", &client_secret, &server_secret).is_err());
     }
 
     #[test]

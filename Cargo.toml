@@ -34,6 +34,10 @@ uuid = "1"
 # targets keep the platform TLS stack selected by native-tls.
 openssl = { version = "0.10", features = ["vendored"] }
 
+[dev-dependencies]
+# Random test secrets; the tests must not hardcode passwords.
+rand = "0.8"
+
 [profile.release]
 lto = true
 codegen-units = 1

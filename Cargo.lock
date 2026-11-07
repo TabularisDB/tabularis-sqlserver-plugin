@@ -2288,6 +2288,7 @@ dependencies = [
  "mssql-tiberius-bridge",
  "once_cell",
  "openssl",
+ "rand 0.8.7",
  "serde",
  "serde_json",
  "sspi",
