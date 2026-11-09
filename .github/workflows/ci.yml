@@ -297,6 +297,16 @@ jobs:
 
             const prNumber = context.payload.pull_request.number;
 
+            // Fork PR tokens are read-only. Keep the suggestion visible in the
+            // job summary without attempting to write a PR comment.
+            if (context.payload.pull_request.head.repo.full_name !== context.payload.pull_request.base.repo.full_name) {
+              const message = classification === "none"
+                ? `No release needed for this PR (${type}).`
+                : `Current: ${baselineStr}\n\nSuggested next tag: v${computeNextVersion(baselineStr, classification, channel)}`;
+              await core.summary.addHeading("Version suggestion").addRaw(message).write();
+              return;
+            }
+
             // Find our most recent, not-yet-minimized comment on this PR.
             const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner,
