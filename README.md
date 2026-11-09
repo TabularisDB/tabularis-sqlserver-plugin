@@ -93,7 +93,7 @@ This plugin enables Tabularis to connect to SQL Server instances, providing sche
 | `host` | `localhost` | Yes unless using `connection_string` | SQL Server hostname or IP address |
 | `port` | `1433` | No | TDS port |
 | `database` | — | Yes unless using `connection_string` | Database the pool connects to |
-| `username` | `sa` | Yes, unless integrated authentication is enabled or `connection_string` is used | SQL-authenticated login |
+| `username` | `sa` | Yes, unless integrated authentication is enabled or `connection_string` is used | SQL-authenticated login, or `DOMAIN\user` / `user@domain` with NTLM |
 | `password` | — | If required by the server | Login password; redacted from connection errors |
 | `ssl_mode` | `prefer` | No | `disable`, `prefer`, `require`, or `verify-full` |
 | `ssl_ca` | — | No | Rejected; strict TLS uses the system trust store |
@@ -136,6 +136,19 @@ runtime via `dlopen`. The binary builds and starts without it, but connecting
 fails at runtime if `libgssapi_krb5` (package `libgssapi-krb5-2` on
 Debian/Ubuntu, `krb5-libs` on RHEL/Alpine) is missing, or without a valid
 Kerberos ticket (`kinit`) and `/etc/krb5.conf`.
+
+### NTLM authentication
+
+The second checkbox, "Use NTLM", writes `extra.ntlm = "true"` and keeps the
+username/password inputs. Enter the username as `DOMAIN\user` or
+`user@domain`. The plugin then authenticates with NTLM through the pure-Rust
+[`sspi`](https://crates.io/crates/sspi) crate on every platform, so Linux and
+macOS need no Kerberos setup or system library. It plugs into mssql-tds'
+`SecurityContextProvider` hook ([microsoft/mssql-rs#707](https://github.com/microsoft/mssql-rs/issues/707)).
+
+NTLM cannot be combined with integrated authentication, and it requires a
+username. Channel bindings (Extended Protection) are not sent, so servers
+that require Extended Protection reject it.
 
 A connection string may be combined with discrete fields. Values explicitly
 present in the string are authoritative, while discrete fields fill only
@@ -372,7 +385,7 @@ remaining pools.
 
 ## Known Limitations
 
-- SQL authentication and Windows/Kerberos integrated authentication (`integrated_auth`) are supported; Azure AD authentication is follow-up work.
+- SQL authentication, Windows/Kerberos integrated authentication (`integrated_auth`) and NTLM (`ntlm`) are supported; Azure AD authentication is follow-up work.
 - Primary-key membership changes are disabled: the single-column alteration API cannot safely preserve composite PKs and referencing foreign keys.
 - Custom CA files are rejected explicitly; strict verification uses the system trust store.
 - SQL Server has indexed views, not materialized views. Indexed views are maintained synchronously and have no refresh operation, so `get_materialized_views`, `get_materialized_view_columns`, `get_materialized_view_definition`, and `refresh_materialized_view` deliberately return `-32601` rather than pretending the features are equivalent.

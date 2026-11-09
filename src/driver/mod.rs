@@ -11,6 +11,7 @@ pub mod explain;
 pub mod extract;
 pub mod helpers;
 pub mod introspection;
+pub mod ntlm;
 pub mod ops;
 pub mod pool;
 pub mod query_templates;

@@ -49,6 +49,12 @@ pub fn resolve_connection_params(params: &ConnectionParams) -> Result<Connection
         }
     }
 
+    if let Some(value) = resolved.extra.get("ntlm") {
+        if parse_bool("ntlm", value)? {
+            resolved.ntlm = true;
+        }
+    }
+
     let connection_string = params
         .connection_string
         .as_deref()
@@ -133,6 +139,20 @@ pub fn resolve_connection_params(params: &ConnectionParams) -> Result<Connection
             "SQL Server integrated authentication cannot be combined with a username or password"
                 .into(),
         );
+    }
+    if resolved.ntlm {
+        if resolved.integrated_auth {
+            return Err(
+                "SQL Server NTLM authentication cannot be combined with integrated authentication"
+                    .into(),
+            );
+        }
+        if non_empty(resolved.username.clone()).is_none() {
+            return Err(
+                "SQL Server NTLM authentication requires a DOMAIN\\user or user@domain username"
+                    .into(),
+            );
+        }
     }
 
     Ok(resolved)
@@ -759,11 +779,14 @@ mod tests {
 
     #[test]
     fn equal_discrete_values_are_accepted_and_missing_values_fill_in() {
-        let mut input = params("Server=db.example,1433;Database=app;User Id=sa;Password=secret");
+        let secret = crate::common::random_secret();
+        let mut input = params(&format!(
+            "Server=db.example,1433;Database=app;User Id=sa;Password={secret}"
+        ));
         input.host = Some("DB.EXAMPLE".into());
         input.port = Some(1433);
         input.username = Some("sa".into());
-        input.password = Some("secret".into());
+        input.password = Some(secret);
         input.ssl_mode = Some("require".into());
 
         let resolved = resolve_connection_params(&input).unwrap();
@@ -792,11 +815,12 @@ mod tests {
 
     #[test]
     fn integrated_auth_rejects_username_and_password() {
+        let secret = crate::common::random_secret();
         for connection_string in [
-            "Server=localhost;Integrated Security=True;User Id=sa",
-            "Server=localhost;Integrated Security=True;Password=secret",
+            "Server=localhost;Integrated Security=True;User Id=sa".to_string(),
+            format!("Server=localhost;Integrated Security=True;Password={secret}"),
         ] {
-            let error = resolve_connection_params(&params(connection_string)).unwrap_err();
+            let error = resolve_connection_params(&params(&connection_string)).unwrap_err();
             assert!(error.contains("integrated authentication"), "{error}");
         }
     }
@@ -811,6 +835,46 @@ mod tests {
 
         let resolved = resolve_connection_params(&input).unwrap();
         assert!(resolved.integrated_auth);
+    }
+
+    #[test]
+    fn extra_field_sets_ntlm_and_keeps_the_credentials() {
+        let mut input = ConnectionParams {
+            host: Some("localhost".into()),
+            username: Some(r"CONTOSO\alice".into()),
+            password: Some(crate::common::random_secret()),
+            ..Default::default()
+        };
+        input.extra.insert("ntlm".into(), "true".into());
+
+        let resolved = resolve_connection_params(&input).unwrap();
+        assert!(resolved.ntlm);
+        assert_eq!(resolved.username.as_deref(), Some(r"CONTOSO\alice"));
+    }
+
+    #[test]
+    fn ntlm_requires_a_username() {
+        let mut input = ConnectionParams {
+            host: Some("localhost".into()),
+            ..Default::default()
+        };
+        input.extra.insert("ntlm".into(), "true".into());
+
+        let error = resolve_connection_params(&input).unwrap_err();
+        assert!(error.contains("requires"), "{error}");
+    }
+
+    #[test]
+    fn ntlm_cannot_be_combined_with_integrated_auth() {
+        let mut input = ConnectionParams {
+            host: Some("localhost".into()),
+            ..Default::default()
+        };
+        input.extra.insert("ntlm".into(), "true".into());
+        input.extra.insert("integrated_auth".into(), "true".into());
+
+        let error = resolve_connection_params(&input).unwrap_err();
+        assert!(error.contains("NTLM"), "{error}");
     }
 
     #[test]
@@ -863,19 +927,22 @@ mod tests {
 
     #[test]
     fn password_parse_errors_never_echo_credentials() {
+        let first = crate::common::random_secret();
+        let second = crate::common::random_secret();
+        let malformed = crate::common::random_secret();
         for (connection_string, secret) in [
             (
-                "Server=localhost;Password=FirstSecret!;Password=SecondSecret!",
-                "FirstSecret!",
+                format!("Server=localhost;Password={first};Password={second}"),
+                first.clone(),
             ),
             (
-                "sqlserver://sa:Malformed%ZZSecret@localhost/master",
-                "Malformed",
+                format!("sqlserver://sa:{malformed}%ZZ@localhost/master"),
+                malformed.clone(),
             ),
         ] {
-            let error = resolve_connection_params(&params(connection_string)).unwrap_err();
-            assert!(!error.contains(secret), "{error}");
-            assert!(!error.contains(connection_string), "{error}");
+            let error = resolve_connection_params(&params(&connection_string)).unwrap_err();
+            assert!(!error.contains(&secret), "{error}");
+            assert!(!error.contains(&connection_string), "{error}");
         }
     }
 

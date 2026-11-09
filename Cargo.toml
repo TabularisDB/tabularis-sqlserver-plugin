@@ -22,6 +22,8 @@ mssql-tds = "=0.4.0"
 once_cell = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# Pure-Rust NTLM client for `extra.ntlm`; mssql-tds only has Kerberos on Unix.
+sspi = { version = "0.23", default-features = false }
 tokio = { version = "1", features = ["full"] }
 uuid = "1"
 
@@ -31,6 +33,10 @@ uuid = "1"
 # libssl would tie the binary to the runner's OpenSSL major version. Other
 # targets keep the platform TLS stack selected by native-tls.
 openssl = { version = "0.10", features = ["vendored"] }
+
+[dev-dependencies]
+# Random test secrets; the tests must not hardcode passwords.
+rand = "0.8"
 
 [profile.release]
 lto = true

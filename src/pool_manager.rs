@@ -29,6 +29,8 @@ fn build_connection_key(params: &ConnectionParams) -> String {
     let ssl_mode = params.ssl_mode.as_deref().unwrap_or("prefer");
     let auth = if params.integrated_auth {
         "integrated".to_string()
+    } else if params.ntlm {
+        format!("ntlm:{}", params.username.as_deref().unwrap_or(""))
     } else {
         format!("sql:{}", params.username.as_deref().unwrap_or(""))
     };
@@ -172,6 +174,15 @@ mod tests {
             build_connection_key(&integrated),
             "editing a saved connection between SQL and Windows auth must not reuse a stale pool"
         );
+    }
+
+    #[test]
+    fn ntlm_is_part_of_the_key_for_the_same_username() {
+        let sql_auth = params(Some("ss045-key"));
+        let mut ntlm = sql_auth.clone();
+        ntlm.ntlm = true;
+
+        assert_ne!(build_connection_key(&sql_auth), build_connection_key(&ntlm));
     }
 
     #[test]

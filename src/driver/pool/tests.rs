@@ -1,4 +1,5 @@
 use super::*;
+use crate::common::random_secret;
 use crate::models::{ConnectionParams, DatabaseSelection};
 use crate::settings::PluginSettings;
 
@@ -8,7 +9,7 @@ fn base_params(host: Option<&str>, port: Option<u16>, db: &str) -> ConnectionPar
         host: host.map(String::from),
         port,
         username: Some("sa".into()),
-        password: Some("Strong!Pass123".into()),
+        password: Some(random_secret()),
         database: DatabaseSelection::Single(db.into()),
         ..Default::default()
     }
@@ -59,6 +60,23 @@ fn build_config_accepts_integrated_auth_without_credentials() {
     params.password = None;
     params.integrated_auth = true;
     assert!(build_config(&params, &PluginSettings::default()).is_ok());
+}
+
+#[test]
+fn build_config_accepts_ntlm_credentials() {
+    let mut params = base_params(Some("localhost"), Some(1433), "master");
+    params.username = Some(r"CONTOSO\alice".into());
+    params.ntlm = true;
+    assert!(build_config(&params, &PluginSettings::default()).is_ok());
+}
+
+#[test]
+fn build_config_rejects_a_malformed_ntlm_username() {
+    let mut params = base_params(Some("localhost"), Some(1433), "master");
+    params.username = Some(r"CONTOSO\alice\bob".into());
+    params.ntlm = true;
+    let error = build_config(&params, &PluginSettings::default()).unwrap_err();
+    assert!(error.contains("NTLM username"), "{error}");
 }
 
 #[test]
