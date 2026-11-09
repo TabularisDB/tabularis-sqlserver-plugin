@@ -408,4 +408,4 @@ jobs:
           # performs RSA private-key operations, so the timing leak is not
           # reachable from this plugin. Re-check when sspi drops picky or
           # rsa ships a fix.
-          ignore: RUSTSEC-2026-0235 RUSTSEC-2023-0071
+          ignore: RUSTSEC-2026-0235,RUSTSEC-2023-0071
