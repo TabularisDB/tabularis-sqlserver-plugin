@@ -402,4 +402,10 @@ jobs:
           # not enable it (`cargo tree -i rkyv` has no path), so no rkyv code
           # is compiled into the shipped binary. Re-check whenever
           # rust_decimal is upgraded or its enabled features change.
-          ignore: RUSTSEC-2026-0235
+          # RUSTSEC-2023-0071 affects rsa 0.10.0-rc.18 (Marvin timing
+          # side channel, no patched release). sspi depends on picky, which
+          # depends on rsa, with no feature gate. The NTLM path never
+          # performs RSA private-key operations, so the timing leak is not
+          # reachable from this plugin. Re-check when sspi drops picky or
+          # rsa ships a fix.
+          ignore: RUSTSEC-2026-0235 RUSTSEC-2023-0071
