@@ -58,6 +58,8 @@ pub fn format_tds_error(error: &TdsError, ssl_mode: Option<&str>) -> String {
         | TdsError::ImplementationError(_)
         | TdsError::UnimplementedFeature { .. }
         | TdsError::TypeConversionError(_)
+        | TdsError::EncodedValueTooLong { .. }
+        | TdsError::TvpCellSerialization { .. }
         | TdsError::UnsupportedEncoding { .. }
         | TdsError::BulkCopyError(_)
         | TdsError::ColumnEncryptionError(_) => format!("SQL Server driver failure: {error}"),
@@ -268,6 +270,34 @@ mod tests {
         assert!(message.contains("TLS negotiation failure"));
         assert!(message.contains("ssl_mode 'verify-full'"));
         assert!(message.contains("ssl_mode 'require'"));
+    }
+
+    #[test]
+    fn serialization_errors_preserve_size_and_cell_context() {
+        let error = BridgeError::Tds(TdsError::EncodedValueTooLong {
+            actual: 256,
+            maximum: 128,
+        });
+        let message = format_bridge_error(&error, None);
+        assert!(message.starts_with("SQL Server driver failure:"));
+        assert!(message.contains("256 bytes"));
+        assert!(message.contains("128 bytes"));
+        assert!(!bridge_error_requires_discard(&error));
+
+        let error = BridgeError::Tds(TdsError::TvpCellSerialization {
+            parameter: mssql_tds::error::TvpParameterRef::RpcPosition(2),
+            row: 3,
+            column: 4,
+            source: Box::new(TdsError::EncodedValueTooLong {
+                actual: 256,
+                maximum: 128,
+            }),
+        });
+        let message = format_bridge_error(&error, None);
+        assert!(message.starts_with("SQL Server driver failure:"));
+        assert!(message.contains("RPC position 2, row 3, column 4"));
+        assert!(message.contains("256 bytes"));
+        assert!(!bridge_error_requires_discard(&error));
     }
 
     #[test]
