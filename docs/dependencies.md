@@ -1,6 +1,6 @@
 # Dependency and supply-chain review
 
-Updated 2026-11-09 for the locked `mssql-tiberius-bridge` 0.3.0 release. The
+Updated 2026-10-10 for the locked `mssql-tiberius-bridge` 0.2.0 release. The
 bridge and protocol dependencies are exact-pinned because the plugin also uses
 the protocol API directly through `Client::inner_mut()`.
 
@@ -8,23 +8,23 @@ the protocol API directly through `Client::inner_mut()`.
 
 ### `mssql-tiberius-bridge`
 
-- **Resolved version:** [`0.3.0`](https://crates.io/crates/mssql-tiberius-bridge/0.3.0).
+- **Resolved version:** [`0.2.0`](https://crates.io/crates/mssql-tiberius-bridge/0.2.0),
+  released 2026-10-10. This is the latest published bridge version as of this
+  review.
 - **Upstream:** [`saurabh500/mssql-tiberius-bridge`](https://github.com/saurabh500/mssql-tiberius-bridge).
   The MIT-licensed crate provides a Tiberius-compatible API over Microsoft's
   `mssql-tds` protocol implementation.
-- **Upgrade impact:** 0.3.0 uses `mssql-tds` 0.4.0 and requires Rust 1.97.
-  Updating only the direct protocol dependency leaves two incompatible protocol
-  APIs in the dependency graph. Both pins must move together. The new
-  `EncodedValueTooLong` and `TvpCellSerialization` errors are reported as driver
-  failures, preserving encoded size limits and TVP parameter/row/column context.
-  The plugin's RPC ping still executes `SELECT 1`.
+- **Upgrade impact:** 0.2.0 uses `mssql-tds` 0.2.0 and requires Rust 1.97.
+  Its new `Error::BulkInput` is reported as a data conversion failure without
+  discarding the connection. `Client::ping()` now performs only a cached
+  dead-connection check; the plugin's RPC ping still executes `SELECT 1`.
   Pool recycling continues to use `Client::reset_session()` before reapplying
   the configured startup script.
 
 ### `mssql-tds`
 
-- **Resolved version:** [`0.4.0`](https://crates.io/crates/mssql-tds/0.4.0),
-  the protocol API required by bridge 0.3.0.
+- **Resolved version:** [`0.2.0`](https://crates.io/crates/mssql-tds/0.2.0),
+  the protocol API required by bridge 0.2.0.
 - **Upstream and licence:** Microsoft's
   [`microsoft/mssql-rs`](https://github.com/microsoft/mssql-rs), MIT.
 - The direct dependency exposes result-set metadata and row iteration not
@@ -36,7 +36,7 @@ the protocol API directly through `Client::inner_mut()`.
 The sections below retain findings from the 2026-08-30 review of preview.3 and
 preview.1. Their issue-status and license-inventory details were not
 re-audited as part of this dependency upgrade; do not treat them as current
-findings for bridge 0.3.0.
+findings for bridge 0.2.0.
 
 ## Open upstream issues relevant to this plugin
 
