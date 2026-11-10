@@ -71,12 +71,12 @@ jobs:
             binary-suffix: ""
             cross: true
           - platform-label: darwin-x64
-            runner: macos-latest
+            runner: macos-15-intel
             target: x86_64-apple-darwin
             archive: zip
             binary-suffix: ""
           - platform-label: darwin-arm64
-            runner: macos-14
+            runner: macos-15
             target: aarch64-apple-darwin
             archive: zip
             binary-suffix: ""
