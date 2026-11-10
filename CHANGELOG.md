@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-11-10
+
 ### Added
 
 - NTLM authentication with `DOMAIN\user` and password on every platform,
@@ -15,6 +17,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Upgrade Microsoft's `mssql-tiberius-bridge` to 0.3.0 and `mssql-tds` to 0.4.0.
+- Update OpenSSL, UUID and the EXPLAIN parser's development dependencies.
+
+### Security
+
+- Document an audit exception for RUSTSEC-2026-0441: `pin-utils` is
+  unmaintained and has no patched release. It is pulled in by `sspi` through
+  `async-dnssd` on macOS/iOS; the plugin does not use its pinning macros
+  directly. Revisit the exception when those upstream dependencies migrate.
+  The transitive maintenance risk remains accepted (#63).
 
 ## [1.0.0-beta.4] - 2026-10-25
 
@@ -155,7 +166,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   regression coverage for pool identity, million-row truncation and concurrent
   responsiveness.
 
-[Unreleased]: https://github.com/TabularisDB/tabularis-sqlserver-plugin/compare/v1.0.0-beta.4...HEAD
+[Unreleased]: https://github.com/TabularisDB/tabularis-sqlserver-plugin/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/TabularisDB/tabularis-sqlserver-plugin/compare/v1.0.0-beta.4...v1.0.1
 [1.0.0-beta.4]: https://github.com/TabularisDB/tabularis-sqlserver-plugin/compare/v1.0.0-beta.3...v1.0.0-beta.4
 [1.0.0-beta.3]: https://github.com/TabularisDB/tabularis-sqlserver-plugin/compare/v1.0.0-beta.2...v1.0.0-beta.3
 [1.0.0-beta.2]: https://github.com/TabularisDB/tabularis-sqlserver-plugin/compare/v1.0.0-beta.1...v1.0.0-beta.2

@@ -418,4 +418,9 @@ jobs:
           # performs RSA private-key operations, so the timing leak is not
           # reachable from this plugin. Re-check when sspi drops picky or
           # rsa ships a fix.
-          ignore: RUSTSEC-2026-0235,RUSTSEC-2023-0071
+          # RUSTSEC-2026-0441 is a maintenance notice with no patched
+          # release, not a disclosed vulnerability. On macOS/iOS, sspi
+          # pulls pin-utils through async-dnssd; NTLM does not use DNS-SD.
+          # Accept this transitive maintenance risk until sspi/async-dnssd
+          # removes pin-utils. Re-check on either dependency upgrade (#63).
+          ignore: RUSTSEC-2026-0235,RUSTSEC-2023-0071,RUSTSEC-2026-0441
