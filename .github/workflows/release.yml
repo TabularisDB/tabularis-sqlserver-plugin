@@ -72,11 +72,13 @@ jobs:
             cross: true
           - platform-label: darwin-x64
             runner: macos-15-intel
+            macos-deployment-target: "10.15"
             target: x86_64-apple-darwin
             archive: zip
             binary-suffix: ""
           - platform-label: darwin-arm64
             runner: macos-15
+            macos-deployment-target: "11.0"
             target: aarch64-apple-darwin
             archive: zip
             binary-suffix: ""
@@ -155,6 +157,10 @@ jobs:
 
       - name: Build
         if: ${{ !matrix.cross }}
+        env:
+          # mssql-tds Network.framework TLS requires macOS 10.15+.
+          # Apple Silicon starts at macOS 11; Linux/Windows leave this unset.
+          MACOSX_DEPLOYMENT_TARGET: ${{ matrix.macos-deployment-target }}
         run: cargo build --release --target ${{ matrix.target }}
 
       - name: Package (unix)

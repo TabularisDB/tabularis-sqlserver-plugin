@@ -341,6 +341,9 @@ status is tracked in [issue #4](https://github.com/TabularisDB/tabularis-sqlserv
 
 ### Manual Installation
 
+macOS packages require macOS 10.15 or later on Intel, or macOS 11 or later on
+Apple Silicon.
+
 Once release assets are available:
 
 1. Download the ZIP for your platform from the [releases page](https://github.com/TabularisDB/tabularis-sqlserver-plugin/releases).
