@@ -42,7 +42,7 @@
     "prepublishOnly": "pnpm run clean && pnpm run typecheck && pnpm run test"
   },
   "peerDependencies": {
-    "@tabularis/explain": "^0.2.0"
+    "@tabularis/explain": "^0.2.0 || ^0.3.0"
   },
   "devDependencies": {
     "@tabularis/explain": "file:tests/host",
