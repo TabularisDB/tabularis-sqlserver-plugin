@@ -423,4 +423,11 @@ jobs:
           # pulls pin-utils through async-dnssd; NTLM does not use DNS-SD.
           # Accept this transitive maintenance risk until sspi/async-dnssd
           # removes pin-utils. Re-check on either dependency upgrade (#63).
-          ignore: RUSTSEC-2026-0235,RUSTSEC-2023-0071,RUSTSEC-2026-0441
+          # RUSTSEC-2026-0543 is a maintenance notice for chrono with no
+          # patched release, not a disclosed vulnerability. Besides the
+          # plugin's own temporal conversions, mssql-tiberius-bridge 0.3.0
+          # depends on chrono unconditionally (not behind a feature), so
+          # dropping it from this crate would not remove it from the tree.
+          # Re-check when the bridge makes chrono optional or replaces it,
+          # then migrate the plugin's own usage (#68).
+          ignore: RUSTSEC-2026-0235,RUSTSEC-2023-0071,RUSTSEC-2026-0441,RUSTSEC-2026-0543
