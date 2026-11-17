@@ -74,10 +74,10 @@ pub fn returns_result_set(query: &str) -> bool {
 /// A fresh random password for tests. Tests must not hardcode secrets.
 #[cfg(test)]
 pub(crate) fn random_secret() -> String {
-    use rand::distributions::Alphanumeric;
-    use rand::{thread_rng, Rng};
-    thread_rng()
-        .sample_iter(&Alphanumeric)
+    use rand::distr::Alphanumeric;
+    use rand::RngExt;
+    rand::rng()
+        .sample_iter(Alphanumeric)
         .take(24)
         .map(char::from)
         .collect()
