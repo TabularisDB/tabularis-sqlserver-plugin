@@ -36,7 +36,7 @@ openssl = { version = "0.10", features = ["vendored"] }
 
 [dev-dependencies]
 # Random test secrets; the tests must not hardcode passwords.
-rand = "0.8"
+rand = "0.10"
 
 [profile.release]
 lto = true
