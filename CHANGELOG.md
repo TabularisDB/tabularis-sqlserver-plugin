@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-11-17
+
+### Changed
+
+- Update `rand` to 0.10 for test secrets and port its call site to the new
+  API (#66).
+- Update `uuid` to 1.29.2 (#67).
+- Accept `@tabularis/explain` 0.3 as a peer of the EXPLAIN parser package
+  (#65).
+
+### Security
+
+- Update `rustix` to 1.1.6 for RUSTSEC-2026-0486 (#69, #70).
+- Document an audit exception for RUSTSEC-2026-0543: `chrono` is unmaintained
+  and has no patched release. `mssql-tiberius-bridge` depends on it
+  unconditionally, so it cannot be removed from the plugin alone. Revisit
+  when the bridge makes it optional (#68, #70).
+
 ## [1.0.1] - 2026-11-10
 
 ### Added
